@@ -5,13 +5,10 @@ import java.io.*;
 
 import org.ibex.classgen.util.*;
 
-// FEATURE: Add a "hit count" to each entry and optimize the table
-
 class CPGen {
-    private Hashtable entries = new Hashtable();
-    private int nextIndex = 1; // 0 is reserved
-    private int count;
-    private int state;
+    private final Hashtable entries = new Hashtable();
+    private int usedSlots = 1; // 0 is reserved
+    private int state = OPEN;
     private static final int OPEN = 0;
     private static final int STABLE = 1; // existing entries won't change
     private static final int SEALED = 2; // no new entries
@@ -22,19 +19,18 @@ class CPGen {
      * Entries 
      */
     abstract static class Ent {
-        int index;
+        int n; // this is the refcount if state == OPEN, index if >= STABLE
         int tag;
         
         Ent(int tag) { this.tag = tag; }
         
-        int getIndex() { return index; }
-        
         void dump(DataOutput o) throws IOException { o.writeByte(tag); }
+        String debugToString() { return toString(); } // so we can remove this method when not debugging
     }
     
-    static class OneU4Ent extends Ent {
+    static class IntEnt extends Ent {
         int i;
-        OneU4Ent(int tag) { super(tag); }
+        IntEnt(int tag) { super(tag); }
         void dump(DataOutput o) throws IOException { super.dump(o); o.writeInt(i);  }
     }
     
@@ -48,16 +44,21 @@ class CPGen {
         Ent e1;
         Ent e2;
         CPRefEnt(int tag) { super(tag); }
+        
+        String debugToString() { return "[" + e1.n + ":" + e1.debugToString() + (e2 == null ? "" : " + " + e2.n + ":" + e2.debugToString()) + "]"; }
+        
         void dump(DataOutput o) throws IOException {
             super.dump(o);
-            o.writeShort(e1.index);
-            if(e2 != null) o.writeShort(e2.index);
+            if(e1.n == 6 || (e2!=null && e2.n == 6)) System.err.println(debugToString() + " refs 6");
+            o.writeShort(e1.n);
+            if(e2 != null) o.writeShort(e2.n);
         }
     }
         
     static class Utf8Ent extends Ent {
         String s;
         Utf8Ent() { super(1); }
+        String debugToString() { return s; }
         void dump(DataOutput o) throws IOException { super.dump(o); o.writeUTF(s); }
     }
     
@@ -86,20 +87,22 @@ class CPGen {
     /*
      * Methods
      */
-    public void seal() { if(state > SEALED) throw new IllegalStateException(); state = SEALED; }
-    public void stable() { if(state > STABLE) throw new IllegalStateException(); state = STABLE; }
     
     public final Ent get(Object o) { return (Ent) entries.get(o); }
     public final Ent getUtf8(String s) { return get(new Utf8Key(s)); }
     public final int getIndex(Object o) {
         Ent e = get(o);
         if(e == null) throw new IllegalStateException("entry not found");
-        return e.getIndex();
+        return getIndex(e);
     }
     public final int getUtf8Index(String s) {
         Ent e = getUtf8(s);
         if(e == null) throw new IllegalStateException("entry not found");
-        return e.getIndex();
+        return getIndex(e);
+    }
+    public final int getIndex(Ent ent) {
+        if(state < STABLE) throw new IllegalStateException("constant pool is not stable");
+        return ent.n;
     }
     
     public final Ent addNameAndType(String name, String descriptor) { return add(new NameAndTypeKey(name,descriptor)); }
@@ -109,7 +112,10 @@ class CPGen {
         if(state == SEALED) throw new IllegalStateException("constant pool is sealed");
             
         Ent ent = get(o);
-        if(ent != null) return ent;
+        if(ent != null) {
+            if(state == OPEN) ent.n++;
+            return ent;
+        }
         
         if(o instanceof Type.Object) {
             CPRefEnt ce = new CPRefEnt(7);
@@ -120,11 +126,11 @@ class CPGen {
             ce.e1 = addUtf8((String)o);
             ent = ce;
         } else if(o instanceof Integer) {
-            OneU4Ent ue = new OneU4Ent(3);
+            IntEnt ue = new IntEnt(3);
             ue.i = ((Integer)o).intValue();
             ent = ue;
         } else if(o instanceof Float) {
-            OneU4Ent ue = new OneU4Ent(4);
+            IntEnt ue = new IntEnt(4);
             ue.i = Float.floatToIntBits(((Float)o).floatValue());
             ent = ue;
         } else if(o instanceof Long) {
@@ -157,34 +163,73 @@ class CPGen {
             throw new IllegalArgumentException("Unknown type passed to add");
         }
         
-        int spaces = ent instanceof LongEnt ? 2 : 1;
+        int spaces = ent instanceof LongEnt ? 2 : 1;        
+        if(usedSlots + spaces > 65536) throw new ClassGen.Exn("constant pool full");
         
-        if(nextIndex + spaces > 65536) throw new ClassGen.Exn("constant pool full");
-        
-        ent.index = nextIndex;
-        nextIndex += spaces;        
-        count++;
+        ent.n = state == OPEN ? 1 : usedSlots; // refcount or index
+
+        usedSlots += spaces;        
 
         entries.put(o,ent);
         return ent;
     }
     
-    public int size() { return nextIndex; }
+    public int slots() { return usedSlots; }
+
+    public void seal() { state = SEALED; }
     
-    private static final Sort.CompareFunc compareFunc = new Sort.CompareFunc() {
-        public int compare(Object a_, Object b_) {
-            return ((Ent)a_).index - ((Ent)b_).index;
-        }
-    };
-    public void dump(DataOutput o) throws IOException {
+    private Ent[] asArray() {
+        int count = entries.size();
         Ent[] ents = new Ent[count];
         int i=0;
         Enumeration e = entries.keys();
         while(e.hasMoreElements()) ents[i++] = (Ent) entries.get(e.nextElement());
         if(i != count) throw new Error("should never happen");
+        return ents;
+    }
+    
+    private static void assignIndex(Ent[] ents) {
+        int index = 1;
+        for(int i=0;i<ents.length;i++) {
+            Ent ent = ents[i];
+            ent.n = index;
+            index += ent instanceof LongEnt ? 2 : 1;
+        }
+    }
+        
+    public void stable() {
+        if(state != OPEN) return;
+        state = STABLE;
+        assignIndex(asArray());
+    } 
+
+    private static final Sort.CompareFunc compareFunc = new Sort.CompareFunc() {
+        public int compare(Object a_, Object b_) {
+            return ((Ent)a_).n - ((Ent)b_).n;
+        }
+    };
+    
+    private static final Sort.CompareFunc reverseCompareFunc = new Sort.CompareFunc() {
+        public int compare(Object a_, Object b_) {
+            return ((Ent)b_).n - ((Ent)a_).n;
+        }
+    };
+    
+    public void optimize() {
+        if(state != OPEN) throw new IllegalStateException("can't optimize a stable constant pool");
+        Ent[] ents = asArray();
+        Sort.sort(ents,reverseCompareFunc);
+        for(int i=0;i<ents.length;i++)
+            System.err.println("" + i + " -> " + ents[i].debugToString() + " (" + ents[i].n + ")");
+        state = STABLE;
+        assignIndex(ents);
+    }
+    
+    public void dump(DataOutput o) throws IOException {
+        Ent[] ents = asArray();
         Sort.sort(ents,compareFunc);
-        for(i=0;i<ents.length;i++) {
-            //System.err.println("" + (i+1) + ": " + ents[i]);
+        for(int i=0;i<ents.length;i++) {
+            System.err.println("" + ents[i].n + ": " + ents[i].debugToString());
             ents[i].dump(o);
         }
     }

@@ -117,13 +117,14 @@ public class ClassGen implements CGConst {
     }
     
     private void _dump(DataOutput o) throws IOException {
+        cp.optimize();
+        cp.stable();
+        
         cp.add(thisType);
         cp.add(superType);
         if(interfaces != null) for(int i=0;i<interfaces.length;i++) cp.add(interfaces[i]);
         if(sourceFile != null && !attributes.contains("SourceFile")) attributes.add("SourceFile",cp.addUtf8(sourceFile));
-        
-        cp.stable();
-        
+                
         for(int i=0;i<methods.size();i++) ((MethodGen)methods.elementAt(i)).finish();
         for(int i=0;i<fields.size();i++) ((FieldGen)fields.elementAt(i)).finish();
         
@@ -133,7 +134,7 @@ public class ClassGen implements CGConst {
         o.writeShort(3); // minor_version
         o.writeShort(45); // major_version
         
-        o.writeShort(cp.size()); // constant_pool_count
+        o.writeShort(cp.slots()); // constant_pool_count
         cp.dump(o); // constant_pool
         
         o.writeShort(flags);
@@ -208,7 +209,7 @@ public class ClassGen implements CGConst {
                     o.write(buf);
                 } else if(val instanceof CPGen.Ent) {
                     o.writeInt(2);
-                    o.writeShort(((CPGen.Ent)val).getIndex());
+                    o.writeShort(cp.getIndex((CPGen.Ent)val));
                 } else {
                     throw new Error("should never happen");
                 }

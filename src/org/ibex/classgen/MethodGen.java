@@ -67,7 +67,7 @@ public class MethodGen implements CGConst {
             o.writeShort(pc[start]);
             o.writeShort(end==pc.length ? endPC : pc[end]);
             o.writeShort(pc[handler]);
-            o.writeShort(typeEnt.getIndex());
+            o.writeShort(cp.getIndex(typeEnt));
         }
     }
     
@@ -425,7 +425,7 @@ public class MethodGen implements CGConst {
                     break;
                 }
                 case LDC:
-                    j = ((CPGen.Ent)arg[i]).getIndex();
+                    j = cp.getIndex((CPGen.Ent)arg[i]);
                     if(j >= 256) this.op[i] = op = LDC_W;
                     break;
                 default:
@@ -546,7 +546,7 @@ public class MethodGen implements CGConst {
                             throw new Error("should never happen");
                         }
                     } else if((opdata & OP_CPENT_FLAG) != 0) {
-                        int v = ((CPGen.Ent)arg).getIndex();
+                        int v = cp.getIndex((CPGen.Ent)arg);
                         if(argLength == 1) o.writeByte(v);
                         else if(argLength == 2) o.writeShort(v);
                         else throw new Error("should never happen");
@@ -585,7 +585,7 @@ public class MethodGen implements CGConst {
         baos.reset();
         o.writeShort(thrownExceptions.size());
         for(Enumeration e = thrownExceptions.keys();e.hasMoreElements();)
-            o.writeShort(((CPGen.Ent)thrownExceptions.get(e.nextElement())).getIndex());
+            o.writeShort(cp.getIndex((CPGen.Ent)thrownExceptions.get(e.nextElement())));
         attrs.add("Exceptions",baos.toByteArray());
         
         size = capacity = FINISHED;        

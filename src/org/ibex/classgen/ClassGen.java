@@ -69,9 +69,8 @@ public class ClassGen implements CGConst {
         cp.seal();
         
         o.writeInt(0xcafebabe); // magic
-        // FIXME: What should this be for JDK 1.1 ?
-        o.writeShort(0); // minor_version
-        o.writeShort(46); // major_version
+        o.writeShort(3); // minor_version
+        o.writeShort(45); // major_version
         
         o.writeShort(cp.size()); // constant_pool_count
         cp.dump(o); // constant_pool

@@ -9,6 +9,8 @@ public class FieldGen implements CGConst {
     private final int flags;
     private final ClassGen.AttrGen attrs;
     
+    private Object constantValue;
+    
     FieldGen(ClassGen owner, String name,Type type, int flags) {
         if((flags & ~(ACC_PUBLIC|ACC_PRIVATE|ACC_PROTECTED|ACC_VOLATILE|ACC_TRANSIENT|ACC_STATIC|ACC_FINAL)) != 0)
             throw new IllegalArgumentException("invalid flags");
@@ -22,7 +24,19 @@ public class FieldGen implements CGConst {
         cp.addUtf8(type.getDescriptor());
     }
     
-    public void dump(DataOutput o) throws IOException {
+    /** Sets the ContantValue attribute for this field. 
+        @param val The value to set this field to. Must be an Integer, Long, Float, Double, or String */
+    public void setConstantValue(Object val) {
+        if((flags & ACC_STATIC) == 0) throw new IllegalStateException("field does not have the ACC_STATIC bit set");
+        constantValue = val;
+    }
+    
+    void finish() {
+        if(constantValue != null && !attrs.contains("ConstantValue"))
+            attrs.add("ConstantValue",cp.add(constantValue));
+    }
+    
+    void dump(DataOutput o) throws IOException {
         o.writeShort(flags);
         o.writeShort(cp.getUtf8Index(name));
         o.writeShort(cp.getUtf8Index(type.getDescriptor()));

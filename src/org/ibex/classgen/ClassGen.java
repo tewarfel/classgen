@@ -74,6 +74,7 @@ public class ClassGen implements CGConst {
         cp.stable();
         
         for(int i=0;i<methods.size();i++) ((MethodGen)methods.elementAt(i)).finish();
+        for(int i=0;i<fields.size();i++) ((FieldGen)fields.elementAt(i)).finish();
         
         cp.seal();
         

@@ -296,6 +296,12 @@ public class MethodGen implements CGConst {
                     p += 1 + 3 + 4; // opcode itself, padding, default
                     if(op == TABLESWITCH) p += 4 + 4 + targets.length * 4; // lo, hi, targets
                     else p += 4 + targets.length * 4 * 2; // count, key,val * targets
+                    if(op == LOOKUPSWITCH) {
+                        int[] vals = ((LSI)si).vals;
+                        for(j=1;j<vals.length;j++)
+                            if(vals[j] <= vals[j-1])
+                                throw new IllegalStateException("out of order/duplicate lookupswitch values");
+                    }
                     break;
                 }
                 case LDC:

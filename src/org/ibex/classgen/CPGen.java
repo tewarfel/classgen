@@ -99,8 +99,6 @@ class CPGen {
         Ent ent = get(o);
         if(ent != null) return ent;
         
-        if(nextIndex == 65536) throw new ClassGen.Exn("constant pool full");
-        
         if(o instanceof Type.Object) {
             CPRefEnt ce = new CPRefEnt(7);
             ce.e1 = addUtf8(((Type.Object)o).internalForm());
@@ -147,8 +145,12 @@ class CPGen {
             throw new IllegalArgumentException("Unknown type passed to add");
         }
         
-        ent.index = nextIndex++;
-        if(ent instanceof LongEnt) nextIndex++;
+        int spaces = ent instanceof LongEnt ? 2 : 1;
+        
+        if(nextIndex + spaces > 65536) throw new ClassGen.Exn("constant pool full");
+        
+        ent.index = nextIndex;
+        nextIndex += spaces;        
         count++;
 
         entries.put(o,ent);

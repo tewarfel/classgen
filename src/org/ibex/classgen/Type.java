@@ -5,7 +5,18 @@ import java.util.StringTokenizer;
 public class Type {
     public static final Type VOID = new Type("V");
     public static final Type INT = new Type("I");
-    public static final Type STRING = new Type.Object("java.lang.String");
+    public static final Type LONG = new Type("J");
+    public static final Type BOOLEAN = new Type("Z");
+    public static final Type DOUBLE = new Type("D");
+    public static final Type FLOAT = new Type("F");
+    
+    public static final Type.Object OBJECT = new Type.Object("java.lang.Object");
+    public static final Type.Object STRING = new Type.Object("java.lang.String");
+    public static final Type.Object STRINGBUFFER = new Type.Object("java.lang.StringBuffer");
+    public static final Type.Object INTEGER_OBJECT = new Type.Object("java.lang.Integer");
+    public static final Type.Object DOUBLE_OBJECT = new Type.Object("java.lang.Double");
+    public static final Type.Object FLOAT_OBJECT = new Type.Object("java.lang.Float");
+    
     public static final Type[] NO_ARGS = new Type[0];
     
     String descriptor;

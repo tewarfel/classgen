@@ -1,6 +1,7 @@
 package org.ibex.classgen;
 
 import java.io.*;
+import java.util.*;
 
 public class MethodGen implements CGConst {
     private final static boolean EMIT_NOPS = true;
@@ -12,12 +13,11 @@ public class MethodGen implements CGConst {
     private final int flags;
     private final AttrGen attrs;
     private final AttrGen codeAttrs;
-    
-    private final int nameIndex;
-    private final int descriptorIndex;
+    private final Hashtable exnTable = new Hashtable();
+    private final Hashtable thrownExceptions = new Hashtable();
     
     private int maxStack = 16;
-    private int maxLocals=1;
+    private int maxLocals;
     
     private int size;
     private int capacity;
@@ -36,22 +36,43 @@ public class MethodGen implements CGConst {
         attrs = new AttrGen(cp);
         codeAttrs = new AttrGen(cp);
         
-        nameIndex = cp.addUtf8(name).index;
-        descriptorIndex = cp.addUtf8(descriptor()).index;
+        cp.addUtf8(name);
+        cp.addUtf8(getDescriptor());
         
         if((owner.flags & ACC_INTERFACE) != 0 || (flags & (ACC_ABSTRACT|ACC_NATIVE)) != 0) size = capacity = -1;
+        
+        maxLocals = Math.max(args.length + (flags&ACC_STATIC)==0 ? 1 : 0,4);
     }
     
-    public String descriptor() { return descriptor(ret,args); }
-    public static String descriptor(Type ret, Type[] args) {
-        StringBuffer sb = new StringBuffer(args.length*4);
-        sb.append("(");
-        for(int i=0;i<args.length;i++) sb.append(args[i].getDescriptor());
-        sb.append(")");
-        sb.append(ret.getDescriptor());
-        return sb.toString();
+    public String getDescriptor() { return MethodRef.getDescriptor(ret,args); }
+    
+    private class ExnTableEnt {
+        public int start;
+        public int end;
+        public int handler;
+        public CPGen.Ent typeEnt;
+        public ExnTableEnt(int start, int end, int handler, CPGen.Ent typeEnt) {
+            this.start = start;
+            this.end = end;
+            this.handler = handler;
+            this.typeEnt = typeEnt;
+        }
+        public void dump(DataOutput o, int[] pc, int endPC) throws IOException {
+            o.writeShort(pc[start]);
+            o.writeShort(end==pc.length ? endPC : pc[end]);
+            o.writeShort(pc[handler]);
+            o.writeShort(typeEnt.getIndex());
+        }
     }
-        
+    
+    public final void addExceptionHandler(int startPC, int endPC, int handlerPC, Type.Object type) {
+        exnTable.put(type, new ExnTableEnt(startPC,endPC,handlerPC,cp.add(type)));
+    }
+    
+    public final void addThrow(Type.Object type) {
+        thrownExceptions.put(type,cp.add(type));
+    }
+    
     private final void grow() { if(size == capacity) grow(size+1); }
     private final void grow(int newCap) {
         if(newCap <= capacity) return;
@@ -69,85 +90,138 @@ public class MethodGen implements CGConst {
     }
     public final int size() { return size; }
     
-    public final int addPushConst(int n) { grow(); setPushConst(size,n); return size++; }
-    public final int addPushConst(long n) { grow(); setPushConst(size,n); return size++; }
-    public final int addPushConst(float n) { grow(); setPushConst(size,n); return size++; }
-    public final int addPushConst(double n) { grow(); setPushConst(size,n); return size++; }
-    public final int addPushConst(Object o) { grow(); setPushConst(size,o); return size++; }
-    public final int add(byte op, int arg) { return add(op,N(arg)); }
+    // FEATURE: Deprecate this
+    public final int addPushConst(int n) { return add(LDC,n); }
+
     public final int add(byte op, Object arg) { grow(); set(size,op,arg); return size++; }
-    public final int add(byte op) { return add(op,null); }
+    public final int add(byte op, boolean arg) { grow(); set(size,op,arg); return size++; }
+    public final int add(byte op, int arg) { grow(); set(size,op,arg); return size++; }
+    public final int add(byte op) { grow(); set(size,op); return size++; }
         
+    public final byte get(int pos) { return op[pos]; }
+    public final Object getArg(int pos) { return arg[pos]; }
+    
+    public final void setArg(int pos, int arg) { set(pos,op[pos],N(arg)); }
+    public final void setArg(int pos, Object arg) { set(pos,op[pos],arg); }
+    
     public final void set(int pos, byte op) { set(pos,op,null); }
-    public final void set(int pos, byte op, int n) { set(pos,op,N(n)); }
-    public final void set(int pos, byte op, Object arg) {
-        if(capacity == -1) throw new IllegalStateException("method can't have code");
-        if(size == -1) throw new IllegalStateException("method is finalized");
+    
+    public final void set(int pos, byte op, boolean b) { set(pos,op,b?1:0); }
+    public final void set(int pos, byte op, int n) {
+        if(op == LDC) {
+            switch(n) {
+                case -1: set(pos,ICONST_M1); return;
+                case 0:  set(pos,ICONST_0);  return;
+                case 1:  set(pos,ICONST_1);  return;
+                case 2:  set(pos,ICONST_2);  return; 
+                case 3:  set(pos,ICONST_3);  return;
+                case 4:  set(pos,ICONST_4);  return;
+                case 5:  set(pos,ICONST_5);  return;
+            }
+            if(n >= -128 && n <= 127) set(pos,BIPUSH,N(n)); 
+            else if(n >= -32767 && n <= 32767) set(pos,SIPUSH,N(n));
+            else set(pos,LDC,cp.add(N(n)));
+        } else {
+            set(pos,op,N(n));
+        }
+    }
+    
+    private void set(int pos, byte op, Object arg) {
         int iarg = arg instanceof Integer ? ((Integer)arg).intValue() : -1;
         
         switch(op) {
-            case LDC: if(iarg >= 256) op = LDC_W; break;
+            case ILOAD: case ISTORE: case LLOAD: case LSTORE: case FLOAD:
+            case FSTORE: case DLOAD: case DSTORE: case ALOAD: case ASTORE:
+            {
+                if(iarg >= 0 && iarg <= 3) {
+                    int base = -1;
+                    switch(op) {
+                        case ILOAD:  base = ILOAD_0; break;
+                        case ISTORE: base = ISTORE_0; break;
+                        case LLOAD:  base = LLOAD_0; break;
+                        case LSTORE: base = LSTORE_0; break; 
+                        case FLOAD:  base = FLOAD_0; break;
+                        case FSTORE: base = FSTORE_0; break;
+                        case DLOAD:  base = DLOAD_0; break;
+                        case DSTORE: base = DSTORE_0; break;
+                        case ALOAD:  base = ALOAD_0; break;
+                        case ASTORE: base = ASTORE_0; break;
+                    }
+                    op = (byte)(base + iarg);
+                } else {
+                    if(iarg > maxLocals) maxLocals = iarg;
+                }
+            }
+            case LDC:
+                if(arg instanceof Integer) { set(pos,op,iarg); return; }
+                if(arg instanceof Boolean) { set(pos,op,((Boolean)arg).booleanValue()); return; }
+                if(arg instanceof Long) {
+                    long l = ((Long)arg).longValue();
+                    if(l == 0L) { set(pos,LCONST_0); return; }
+                    if(l == 1L) { set(pos,LCONST_1); return; }
+                }
+                
+                if(arg instanceof Long || arg instanceof Double) op = LDC2_W;
+                // fall through
+            default:
+                if(OP_CPENT(op) && !(arg instanceof CPGen.Ent)) arg = cp.add(arg);
+                break;
         }
+        _set(pos,op,arg);
+    }
+    
+    public final  void _set(int pos, byte op, Object arg) {
+        if(capacity == -1) throw new IllegalStateException("method can't have code");
+        if(size == -1) throw new IllegalStateException("method is finalized");
+        if(!OP_VALID(op)) throw new IllegalArgumentException("unknown bytecode");
+        
         this.op[pos] = op;
         this.arg[pos] = arg;
     }
-        
-    public final void setPushConst(int pos, int n) {
-        switch(n) {
-            case -1: set(pos,ICONST_M1); break;
-            case 0:  set(pos,ICONST_0);  break;
-            case 1:  set(pos,ICONST_1);  break;
-            case 2:  set(pos,ICONST_2);  break; 
-            case 3:  set(pos,ICONST_3);  break;
-            case 4:  set(pos,ICONST_4);  break;
-            case 5:  set(pos,ICONST_5);  break;
-            default:
-                if(n >= -128 && n <= 127) set(pos,BIPUSH,n);
-                if(n >= -32767 && n <= 32767) set(pos,SIPUSH,n);
-                setLDC(pos,N(n));
-                break;
-        }
-    }
-    public final void setPushConst(int pos, long l) {
-        if(l==0) set(pos,LCONST_0);
-        else if(l==1) set(pos,LCONST_1);
-        else setLDC(pos,N(l));
-    }
     
-    public final void setPushConst(int pos, float f) {
-        if(f == 1.0f) set(pos,FCONST_0);
-        else if(f == 1.0f) set(pos,FCONST_1);
-        else if(f == 2.0f) set(pos,FCONST_2);
-        else setLDC(pos,N(f));
-    }
-    public final void setPushConst(int pos, double d) {
-        if(d == 1.0) set(pos,DCONST_0);
-        else if(d == 2.0) set(pos,DCONST_1);
-        else setLDC(pos,N(d));
-    }
-    public final void setPushConst(int pos, Object o) {
-        if(o instanceof Integer) setPushConst(pos,((Integer)o).intValue());
-        else if(o instanceof Long) setPushConst(pos,((Long)o).longValue());
-        else if(o instanceof Float) setPushConst(pos,((Float)o).floatValue());
-        else if(o instanceof Double) setPushConst(pos,((Double)o).doubleValue());
-        else setLDC(pos,o);
-    }
-        
-    private void setLDC(int pos, Object o) { set(pos,LDC,cp.add(o)); }
+    public static class SI {
+        public final Object[] targets;
+        public Object defaultTarget;
 
-    public final CPGen.Ent methodRef(Type.Object c, String name, Type ret, Type[] args) {        
-        return methodRef(c,name,MethodGen.descriptor(ret,args));
+        SI(int size) { targets = new Object[size]; }
+        public void setTarget(int pos, Object val) { targets[pos] = val; }
+        public void setTarget(int pos, int val) { targets[pos] = N(val); }
+        public void setDefaultTarget(int val) { setDefaultTarget(N(val)); }
+        public void setDefaultTarget(Object o) { defaultTarget = o; }
+        public int size() { return targets.length; }
+        
+        public int getTarget(int pos) { return ((Integer)targets[pos]).intValue(); }
+        public int getDefaultTarget() { return ((Integer)defaultTarget).intValue(); }
     }
-    public final CPGen.Ent methodRef(Type.Object c, String name, String descriptor) {
-        return cp.add(new CPGen.MethodRef(c,new CPGen.NameAndType(name,descriptor)));
-    }
-    public final CPGen.Ent fieldRef(Type.Object c, String name, Type type) {
-        return fieldRef(c,name,type.getDescriptor());
-    }
-    public final CPGen.Ent fieldRef(Type.Object c, String name, String descriptor) {
-        return cp.add(new CPGen.FieldRef(c,new CPGen.NameAndType(name,descriptor)));
-    }    
     
+    public static class TSI extends SI {
+        public final int lo;
+        public final int hi;
+        public int defaultTarget = -1;
+        public TSI(int lo, int hi) {
+            super(hi-lo+1);
+            this.lo = lo;
+            this.hi = hi;
+        }
+        public void setTargetForVal(int val, Object o) { setTarget(val-lo,o); }
+        public void setTargetForVal(int val, int n) { setTarget(val-lo,n); }
+    }
+    
+    public static class LSI extends SI {
+        public final int[] vals;
+        public LSI(int size) {
+           super(size);
+           this.vals = new int[size];
+        }
+        public final void setVal(int pos, int val) { vals[pos] = val; }
+    }
+    
+    public static class Pair {
+        public int i1;
+        public int i2;
+        public Pair(int i1, int i2) { this.i1 = i1; this.i2 = i2; }
+    }
+        
     public void setMaxLocals(int maxLocals) { this.maxLocals = maxLocals; }
     public void setMaxStack(int maxStack) { this.maxStack = maxStack; }
     
@@ -157,6 +231,20 @@ public class MethodGen implements CGConst {
         } catch(IOException e) {
             throw new Error("should never happen");
         }
+    }
+    
+    private Object resolveTarget(Object arg) {
+        int target;
+        if(arg instanceof PhantomTarget) {
+            target = ((PhantomTarget)arg).getTarget();
+            if(target == -1) throw new IllegalStateException("unresolved phantom target");
+            arg = N(target);
+        } else {
+            target = ((Integer)arg).intValue();
+        }
+        if(target < 0 || target >= size)
+            throw new IllegalStateException("invalid target address");
+        return arg;
     }
     
     private void _finish() throws IOException {
@@ -169,17 +257,51 @@ public class MethodGen implements CGConst {
         int[] maxpc = pc;
         int p,i;
         
-        // Pass1 - Calculate maximum pc of each bytecode
+        // Pass1 - Calculate maximum pc of each bytecode, widen some insns, resolve any unresolved jumps, etc
         for(i=0,p=0;i<size;i++) {
             byte op = this.op[i];
+            int j;
             maxpc[i] = p;
+            
+            if(OP_BRANCH(op)) { 
+                try { 
+                    arg[i] = resolveTarget(arg[i]);
+                } catch(RuntimeException e) {
+                    System.err.println("WARNING: Error resolving target for " + Integer.toHexString(op&0xff));
+                    throw e;
+                }
+            }
+            
             switch(op) {
-                case GOTO: p += 3; break;
-                case JSR: p += 3; break;
-                case NOP: if(!EMIT_NOPS) continue; /* fall though */
-                default: p += 1 + opArgLength(op); break;
+                case GOTO:
+                case JSR:
+                    p += 3;
+                    break;
+                case NOP:
+                    if(EMIT_NOPS) p++;
+                    break;
+                case LOOKUPSWITCH:
+                case TABLESWITCH: {
+                    SI si = (SI) arg[i];
+                    Object[] targets = si.targets;
+                    for(j=0;j<targets.length;j++) targets[j] = resolveTarget(targets[j]);
+                    si.defaultTarget = resolveTarget(si.defaultTarget);
+                    p += 1 + 3 + 4; // opcode itself, padding, default
+                    if(op == TABLESWITCH) p += 4 + 4 + targets.length * 4; // lo, hi, targets
+                    else p += 4 + targets.length * 4 * 2; // count, key,val * targets
+                    break;
+                }
+                case LDC:
+                    j = ((CPGen.Ent)arg[i]).getIndex();
+                    if(j >= 256) this.op[i] = op = LDC_W;
+                    // fall through
+                default:
+                    if((j = OP_ARG_SIZE(op)) == -1) throw new Error("shouldn't be here");
+                    p += 1 + j;
+                    break;
             }
         }
+        
         // Pass2 - Widen instructions if they can possibly be too short
         for(i=0;i<size;i++) {
             switch(op[i]) {
@@ -189,67 +311,121 @@ public class MethodGen implements CGConst {
                     int diff = maxpc[arg] - maxpc[i];
                     if(diff < -32768 || diff > 32767)
                         op[i] = op[i] == GOTO ? GOTO_W : JSR_W;
+                    break;
                 }
             }
         }
+        
         // Pass3 - Calculate actual pc
         for(i=0,p=0;i<size;i++) {
             byte op = this.op[i];
             pc[i] = p;
-            p += op != NOP || EMIT_NOPS ? 1 + opArgLength(op) : 0;
+            switch(op) {
+                case NOP:
+                    if(EMIT_NOPS) p++;
+                    break;
+                case TABLESWITCH:
+                case LOOKUPSWITCH: {
+                    SI si = (SI) arg[i];
+                    p++; // opcpde itself
+                    p = (p + 3) & ~3; // padding
+                    p += 4; // default
+                    if(op == TABLESWITCH) p += 4 + 4 + si.size() * 4; // lo, hi, targets
+                    else p += 4 + si.size() * 4 * 2; // count, key,val * targets
+                    break;
+                }
+                default: {
+                    int l = OP_ARG_SIZE(op);
+                    if(l == -1) throw new Error("shouldn't be here");
+                    p += 1 + l;                    
+                }
+            }
         }
+        
+        int codeSize = p;
         
         o.writeShort(maxStack);
         o.writeShort(maxLocals);
-        o.writeInt(p);
+        o.writeInt(codeSize);
         
         // Pass 4 - Actually write the bytecodes
         for(i=0;i<size;i++) {
             byte op = this.op[i];
-            System.err.println("" + i + " Writing " + Integer.toHexString(op) + " at " + pc[i]);
             if(op == NOP && !EMIT_NOPS) continue;
-            int argLength = opArgLength(op);
+            
             o.writeByte(op&0xff);
-            if(argLength == 0) continue;
-            Object arg = this.arg[i];            
-            int iarg = arg instanceof Integer ? ((Integer)arg).intValue() : -1;
-            int outArg = iarg;
+            int argLength = OP_ARG_SIZE(op);
+            
+            if(argLength == 0) continue; // skip if no args
+            
+            // Write args
+            Object arg = this.arg[i];  
+            boolean wasInt = arg instanceof Integer;
+            int iarg = wasInt ? ((Integer)arg).intValue() : -1;
             
             switch(op) {
                 case IINC: {
-                    int[] pair = (int[]) arg;
-                    if(pair[0] > 255 || pair[1] < -128 || pair[1] > 127) throw new ClassGen.Exn("overflow of iinc arg"); 
-                    o.writeByte(pair[0]);
-                    o.writeByte(pair[1]);
-                    continue;
+                    Pair pair = (Pair) arg;
+                    if(pair.i1 > 255 || pair.i2 < -128 || pair.i2 > 127) throw new ClassGen.Exn("overflow of iinc arg"); 
+                    o.writeByte(pair.i1);
+                    o.writeByte(pair.i2);
                 }
-                case IF_ICMPLT:
-                case GOTO:
-                case GOTO_W:
-                case JSR:
-                case JSR_W:
-                    outArg = pc[iarg] - pc[i];
-                    if(outArg < -32768 || outArg > 32767) throw new ClassGen.Exn("overflow of s2 offset");
+                case TABLESWITCH:
+                case LOOKUPSWITCH: {
+                    SI si = (SI) arg;
+                    int mypc = pc[i];
+                    for(p = pc[i]+1;(p&3)!=0;p++) o.writeByte(0);
+                    o.writeInt(pc[si.getDefaultTarget()] - mypc);
+                    if(op == LOOKUPSWITCH) {
+                        int[] vals = ((LSI)si).vals;
+                        o.writeInt(si.size());
+                        for(int j=0;j<si.size();j++) {
+                            o.writeInt(vals[j]);
+                            o.writeInt(pc[si.getTarget(j)] - mypc);
+                        }
+                    } else {
+                        TSI tsi = (TSI) si;
+                        o.writeInt(tsi.lo);
+                        o.writeInt(tsi.hi);
+                        for(int j=0;j<tsi.size();j++) o.writeInt(pc[tsi.getTarget(j)] - mypc);
+                    }
                     break;
-                case INVOKESTATIC:
-                case INVOKESPECIAL:
-                case INVOKEVIRTUAL:
-                case GETSTATIC:
-                case PUTSTATIC:
-                case GETFIELD:
-                case PUTFIELD:
-                case LDC_W:
-                case LDC:
-                    outArg = ((CPGen.Ent)arg).index;
+                }
+                    
+                default:
+                    if(OP_BRANCH(op)) {
+                        int v = pc[iarg] - pc[i];
+                        if(v < -32768 || v > 32767) throw new ClassGen.Exn("overflow of s2 offset");
+                        o.writeShort(v);
+                    } else if(OP_CPENT(op)) {
+                        int v = ((CPGen.Ent)arg).getIndex();
+                        if(argLength == 1) o.writeByte(v);
+                        else if(argLength == 2) o.writeShort(v);
+                        else throw new Error("should never happen");
+                    } else if(argLength == -1) {
+                        throw new Error("should never happen - variable length instruction not explicitly handled");
+                    } else {
+                        if(!wasInt) throw new IllegalStateException("Invalid argument given for " + Integer.toHexString(op&0xff));
+                        if(argLength == 1) {
+                            if(iarg < -128 || iarg >= 256) throw new ClassGen.Exn("overflow of s/u1 option");
+                            o.writeByte(iarg);
+                        } else if(argLength == 2) {
+                            if(iarg < -32767 || iarg >= 65536) throw new ClassGen.Exn("overflow of s/u2 option"); 
+                            o.writeShort(iarg);
+                        } else {
+                            throw new Error("should never happen");
+                        }
+                    }
                     break;
             }
-            
-            if(argLength == 1) o.writeByte(outArg);
-            else if(argLength == 2) o.writeShort(outArg);
-            else throw new Error("should never happen");
         }
 
-        o.writeShort(0); // FIXME: Exception table
+        if(baos.size() - 8 != codeSize) throw new Error("we didn't output what we were supposed to");
+        
+        o.writeShort(exnTable.size());
+        for(Enumeration e = exnTable.keys();e.hasMoreElements();)
+            ((ExnTableEnt)exnTable.get(e.nextElement())).dump(o,pc,codeSize);
+        
         o.writeShort(codeAttrs.size());
         codeAttrs.dump(o);
         
@@ -257,71 +433,80 @@ public class MethodGen implements CGConst {
         
         byte[] codeAttribute = baos.toByteArray();
         attrs.add("Code",codeAttribute);
+        
+        baos.reset();
+        o.writeShort(thrownExceptions.size());
+        for(Enumeration e = thrownExceptions.keys();e.hasMoreElements();)
+            o.writeShort(((CPGen.Ent)thrownExceptions.get(e.nextElement())).getIndex());
+        attrs.add("Exceptions",baos.toByteArray());
+        
         size = -1;        
     }
         
     public void dump(DataOutput o) throws IOException {
         o.writeShort(flags);
-        o.writeShort(nameIndex);
-        o.writeShort(descriptorIndex);
+        o.writeShort(cp.getUtf8Index(name));
+        o.writeShort(cp.getUtf8Index(getDescriptor()));
         o.writeShort(attrs.size());
         attrs.dump(o);
     }
     
-    private static int opArgLength(byte op) {
+    public static byte negate(byte op) {
         switch(op) {
-            case NOP:
-            case ICONST_M1:
-            case ICONST_0:
-            case ICONST_1:
-            case ICONST_2:
-            case ICONST_3:
-            case ICONST_4:
-            case ICONST_5:
-            case LCONST_0:
-            case LCONST_1:
-            case FCONST_0:
-            case FCONST_1:
-            case FCONST_2:
-            case DCONST_0:
-            case DCONST_1:
-            case ILOAD_0:
-            case ILOAD_1:
-            case ILOAD_2:
-            case ILOAD_3:
-            case ISTORE_0:
-            case ISTORE_1:
-            case ISTORE_2:
-            case ISTORE_3:
-            case RETURN:
-                return 0;
-            case LDC:
-            case BIPUSH:
-            case ILOAD:
-            case ISTORE:
-                return 1;
-            case LDC_W:
-            case SIPUSH:
-            case GETSTATIC:
-            case PUTSTATIC:
-            case GETFIELD:
-            case PUTFIELD:
-            case INVOKESTATIC:
-            case INVOKEVIRTUAL:
-            case INVOKESPECIAL:
-            case IINC:
-            case GOTO:
-            case JSR:
-            case IF_ICMPLT:
-                return 2;
+            case IFEQ: return IFNE;
+            case IFNE: return IFEQ;
+            case IFLT: return IFGE;
+            case IFGE: return IFLT;
+            case IFGT: return IFLE;
+            case IFLE: return IFGT;
+            case IF_ICMPEQ: return IF_ICMPNE;
+            case IF_ICMPNE: return IF_ICMPEQ;
+            case IF_ICMPLT: return IF_ICMPGE;
+            case IF_ICMPGE: return IF_ICMPLT;
+            case IF_ICMPGT: return IF_ICMPLE;
+            case IF_ICMPLE: return IF_ICMPGT;
+            case IF_ACMPEQ: return IF_ACMPNE;
+            case IF_ACMPNE: return IF_ACMPEQ;
+            
             default:
-                throw new ClassGen.Exn("unknown bytecode " + Integer.toHexString(op&0xff));
+                throw new IllegalArgumentException("Can't negate " + Integer.toHexString(op));
         }
     }
-        
+    
+    public static class PhantomTarget {
+        private int target = -1;
+        public void setTarget(int target) { this.target = target; }
+        public int getTarget() { return target; }
+    }
+    
     private static Integer N(int n) { return new Integer(n); }
     private static Long N(long n) { return new Long(n); }
     private static Float N(float f) { return new Float(f); }
     private static Double N(double d) { return new Double(d); }
     private static int max(int a, int b) { return a > b ? a : b; }
+    
+    private static final boolean OP_VALID(byte op) { return (OP_DATA[op&0xff] & 1) != 0; }
+    private static final int OP_ARG_SIZE(byte op) { int n = ((OP_DATA[op&0xff]>>1)&3); return n == 7 ? -1 : n; }
+    private static final boolean OP_CPENT(byte op) { return (OP_DATA[op&0xff]&(1<<4)) != 0; }
+    private static final boolean OP_BRANCH(byte op) { return (OP_DATA[op&0xff]&(1<<5)) != 0; }
+    
+    // Run perl -x src/org/ibex/classgen/CGConst.java to generate this
+    private static final byte[] OP_DATA = {
+            0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+            0x03, 0x05, 0x13, 0x15, 0x15, 0x03, 0x03, 0x03, 0x03, 0x03, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+            0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+            0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x13, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+            0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+            0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+            0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+            0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+            0x01, 0x01, 0x01, 0x01, 0x05, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+            0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x25, 0x25, 0x25, 0x25, 0x25, 0x25, 0x25,
+            0x25, 0x25, 0x25, 0x25, 0x25, 0x25, 0x25, 0x25, 0x25, 0x03, 0x0f, 0x0f, 0x01, 0x01, 0x01, 0x01,
+            0x01, 0x01, 0x15, 0x15, 0x15, 0x15, 0x15, 0x15, 0x15, 0x15, 0x02, 0x15, 0x03, 0x15, 0x01, 0x01,
+            0x15, 0x15, 0x01, 0x01, 0x0f, 0x07, 0x25, 0x25, 0x29, 0x29, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02,
+            0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02,
+            0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02,
+            0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02
+    };
 }

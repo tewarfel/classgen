@@ -24,7 +24,7 @@ public class AttrGen {
         for(Enumeration e = ht.keys(); e.hasMoreElements();) {
             String name = (String) e.nextElement();
             byte[] val = (byte[]) ht.get(name);
-            o.writeShort(cp.getUtf8(name).index);
+            o.writeShort(cp.getUtf8Index(name));
             o.writeInt(val.length);
             o.write(val);
         }

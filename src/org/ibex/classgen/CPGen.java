@@ -5,9 +5,12 @@ import java.io.*;
 
 import org.ibex.classgen.util.*;
 
-public class CPGen {
+// FEATURE: Add a "hit count" to each entry and optimize the table
+
+class CPGen {
     private Hashtable entries = new Hashtable();
     private int nextIndex = 1; // 0 is reserved
+    private int count;
     private boolean sealed;
     
     CPGen() { }
@@ -17,8 +20,14 @@ public class CPGen {
      */
     abstract static class Ent implements Sort.Comparable {
         int index;
-        public abstract int tag();
-        public void dump(DataOutput o) throws IOException { o.writeByte(tag()); }
+        int tag;
+        
+        Ent(int tag) { this.tag = tag; }
+        
+        int getIndex() { return index; }
+        
+        void dump(DataOutput o) throws IOException { o.writeByte(tag); }
+        
         public int compareTo(Object o) {
             if(!(o instanceof Ent)) return 1;
             int oi = ((Ent)o).index;
@@ -28,30 +37,33 @@ public class CPGen {
         }
     }
     
-    abstract static class OneU2Ent extends Ent      { int i;  public void dump(DataOutput o) throws IOException { super.dump(o); o.writeShort(i);  } }
-    abstract static class OneU4Ent extends Ent      { int i;  public void dump(DataOutput o) throws IOException { super.dump(o); o.writeInt(i);    } }
-    abstract static class TwoU2Ent extends OneU2Ent { int i2; public void dump(DataOutput o) throws IOException { super.dump(o); o.writeShort(i2); } }
-    abstract static class TwoU4Ent extends OneU4Ent { int i2; public void dump(DataOutput o) throws IOException { super.dump(o); o.writeInt(i2);   } }
+    static class OneU4Ent extends Ent {
+        int i;
+        OneU4Ent(int tag) { super(tag); }
+        void dump(DataOutput o) throws IOException { super.dump(o); o.writeInt(i);  }
+    }
     
-    static class IntEnt         extends OneU4Ent { public int tag() { return 3;  } } // word1: bytes
-    static class FloatEnt       extends OneU4Ent { public int tag() { return 4;  } } // word1: bytes
-    static class LongEnt        extends TwoU4Ent { public int tag() { return 5;  } } // word1/2: bytes
-    static class DoubleEnt      extends TwoU4Ent { public int tag() { return 6;  } } // word1/2: bytes
-    static class ClassEnt       extends OneU2Ent { public int tag() { return 7;  } } // word1: name_index
-    static class StringEnt      extends OneU2Ent { public int tag() { return 8;  } } // word1: string_index
-    static class FieldRefEnt    extends TwoU2Ent { public int tag() { return 9;  } } // word1: class_index word2: name_and_type_index
-    static class MethodRefEnt   extends TwoU2Ent { public int tag() { return 10; } } // word1: class_index word2: name_and_type_index
-    static class IMethodRefEnt  extends TwoU2Ent { public int tag() { return 11; } } // word1: class_index word2: name_and_type_index
-    static class NameAndTypeEnt extends TwoU2Ent { public int tag() { return 12; } } // word1: name_index  word2: descriptor_index
+    static class LongEnt extends Ent {
+        long l;
+        LongEnt(int tag) { super(tag); }
+        void dump(DataOutput o) throws IOException { super.dump(o); o.writeLong(l); }
+    }
     
+    static class CPRefEnt extends Ent {
+        Ent e1;
+        Ent e2;
+        CPRefEnt(int tag) { super(tag); }
+        void dump(DataOutput o) throws IOException {
+            super.dump(o);
+            o.writeShort(e1.index);
+            if(e2 != null) o.writeShort(e2.index);
+        }
+    }
+        
     static class Utf8Ent extends Ent {
         String s;
-        public int tag() { return 1; }
-        public void dump(DataOutput o) throws IOException {
-            super.dump(o);
-            o.writeUTF(s);
-        }
-        public String toString() { return "Utf8: " + s; }
+        Utf8Ent() { super(1); }
+        void dump(DataOutput o) throws IOException { super.dump(o); o.writeUTF(s); }
     }
     
     /*
@@ -63,34 +75,7 @@ public class CPGen {
         public boolean equals(Object o) { return o instanceof Utf8Key && ((Utf8Key)o).s.equals(s); }
         public int hashCode() { return ~s.hashCode(); }
     }
-    
-    public static class NameAndType {
-        String name;
-        String type;
-        public NameAndType(String name, String type) { this.name = name; this.type = type; }
-        public boolean equals(Object o_) {
-            if(!(o_ instanceof NameAndType)) return false;
-            NameAndType o = (NameAndType) o_;
-            return o.name.equals(name) && o.type.equals(type);
-        }
-        public int hashCode() { return name.hashCode() ^ type.hashCode(); }
-    }
-    
-    static abstract class FieldMethodRef {
-        Type.Object klass;
-        NameAndType nameAndType;
-        public FieldMethodRef(Type.Object klass, NameAndType nameAndType) { this.klass = klass; this.nameAndType = nameAndType; }
-        public boolean equals(Object o_) {
-            if(!(o_ instanceof FieldMethodRef)) return false;
-            FieldMethodRef o = (FieldMethodRef) o_;
-            return o.klass.equals(klass) && o.nameAndType.equals(nameAndType);
-        }
-    }
-    
-    public static class FieldRef   extends FieldMethodRef { public FieldRef  (Type.Object c, NameAndType t) { super(c,t); } }
-    public static class MethodRef  extends FieldMethodRef { public MethodRef (Type.Object c, NameAndType t) { super(c,t); } }
-    public static class IMethodRef extends FieldMethodRef { public IMethodRef(Type.Object c, NameAndType t) { super(c,t); } }
-    
+        
     /*
      * Methods
      */
@@ -98,10 +83,21 @@ public class CPGen {
     
     public final Ent get(Object o) { return (Ent) entries.get(o); }
     public final Ent getUtf8(String s) { return get(new Utf8Key(s)); }
+    public final int getIndex(Object o) {
+        Ent e = get(o);
+        if(e == null) throw new IllegalStateException("entry not found");
+        return e.getIndex();
+    }
+    public final int getUtf8Index(String s) {
+        Ent e = getUtf8(s);
+        if(e == null) throw new IllegalStateException("entry not found");
+        return e.getIndex();
+    }
     
-    public final Ent addNameAndType(String name, String descriptor) { return add(new NameAndType(name,descriptor)); }
+    public final Ent addNameAndType(String name, String descriptor) { return add(new ClassGen.NameAndType(name,descriptor)); }
     public final Ent addUtf8(String s) { return add(new Utf8Key(s)); }
     
+    // FEATURE: Don't resolve indexes until dump (for optimize) 
     public final Ent add(Object o) {
         if(sealed) throw new IllegalStateException("constant pool is sealed");
             
@@ -111,58 +107,55 @@ public class CPGen {
         if(nextIndex == 65536) throw new ClassGen.Exn("constant pool full");
         
         if(o instanceof Type.Object) {
-            ClassEnt ce = new ClassEnt();
-            ce.i = addUtf8(((Type.Object)o).internalForm()).index;
+            CPRefEnt ce = new CPRefEnt(7);
+            ce.e1 = addUtf8(((Type.Object)o).internalForm());
             ent = ce;
         } else if(o instanceof String) {
-            StringEnt se = new StringEnt();
-            se.i = addUtf8((String)o).index;
-            ent = se;
+            CPRefEnt ce = new CPRefEnt(8);
+            ce.e1 = addUtf8((String)o);
+            ent = ce;
         } else if(o instanceof Integer) {
-            IntEnt ie = new IntEnt();
-            ie.i = ((Integer)o).intValue();
-            ent = ie;
+            OneU4Ent ue = new OneU4Ent(3);
+            ue.i = ((Integer)o).intValue();
+            ent = ue;
         } else if(o instanceof Float) {
-            FloatEnt fe = new FloatEnt();
-            fe.i = Float.floatToIntBits(((Float)o).floatValue());
-            ent = fe;
+            OneU4Ent ue = new OneU4Ent(4);
+            ue.i = Float.floatToIntBits(((Float)o).floatValue());
+            ent = ue;
         } else if(o instanceof Long) {
-            LongEnt le = new LongEnt();
-            long l = ((Long)o).longValue();
-            le.i = (int)(l>>>32);
-            le.i2 = (int)l;
+            LongEnt le = new LongEnt(5);
+            le.l = ((Long)o).longValue();
             ent = le;
         } else if(o instanceof Double) {
-            DoubleEnt de = new DoubleEnt();
-            long l = Double.doubleToLongBits(((Double)o).doubleValue());
-            de.i = (int)(l>>>32);
-            de.i2 = (int)l;
-            ent = de;
+            LongEnt le = new LongEnt(6);
+            le.l = Double.doubleToLongBits(((Double)o).doubleValue());
+            ent = le;
         } else if(o instanceof Utf8Key) {
             Utf8Ent ue = new Utf8Ent();
             ue.s = ((Utf8Key)o).s;
             ent = ue;
-        } else if(o instanceof NameAndType) {
-            NameAndTypeEnt ne = new NameAndTypeEnt();
-            NameAndType key = (NameAndType) o;
-            ne.i = addUtf8(key.name).index;
-            ne.i2 = addUtf8(key.type).index;
-            ent = ne;
-        } else if(o instanceof FieldMethodRef) {
-            FieldMethodRef key = (FieldMethodRef) o;
-            TwoU2Ent fme;
-            if(o instanceof MethodRef) fme = new MethodRefEnt();
-            else if(o instanceof IMethodRef) fme = new IMethodRefEnt();
-            else if(o instanceof FieldRef) fme = new FieldRefEnt();
-            else throw new Error("should never happen");
-            fme.i = add(key.klass).index;
-            fme.i2 = add(key.nameAndType).index;
-            ent = fme;
+        } else if(o instanceof ClassGen.NameAndType) {
+            CPRefEnt ce = new CPRefEnt(12);
+            ClassGen.NameAndType key = (ClassGen.NameAndType) o;
+            ce.e1 = addUtf8(key.name);
+            ce.e2 = addUtf8(key.type);
+            ent = ce;
+        } else if(o instanceof ClassGen.FieldMethodRef) {
+            ClassGen.FieldMethodRef key = (ClassGen.FieldMethodRef) o;
+            int tag = o instanceof FieldRef ? 9 : o instanceof MethodRef ? 10 : o instanceof ClassGen.InterfaceMethodRef ? 11 : 0;
+            if(tag == 0) throw new Error("should never happen");
+            CPRefEnt ce = new CPRefEnt(tag);
+            ce.e1 = add(key.klass);
+            ce.e2 = add(key.nameAndType);
+            ent = ce;
         } else {
             throw new IllegalArgumentException("Unknown type passed to add");
         }
         
         ent.index = nextIndex++;
+        if(ent instanceof LongEnt) nextIndex++;
+        count++;
+
         entries.put(o,ent);
         return ent;
     }
@@ -170,13 +163,14 @@ public class CPGen {
     public int size() { return nextIndex; }
     
     public void dump(DataOutput o) throws IOException {
-        Ent[] ents = new Ent[nextIndex-1];
+        Ent[] ents = new Ent[count];
         int i=0;
         Enumeration e = entries.keys();
         while(e.hasMoreElements()) ents[i++] = (Ent) entries.get(e.nextElement());
+        if(i != count) throw new Error("should never happen");
         Sort.sort(ents);
         for(i=0;i<ents.length;i++) {
-            //System.err.println("" + (i+1) + ": " + ents[i]);
+            System.err.println("" + (i+1) + ": " + ents[i]);
             ents[i].dump(o);
         }
     }

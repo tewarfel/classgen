@@ -19,14 +19,13 @@ public class Type {
     
     public static final Type[] NO_ARGS = new Type[0];
     
-    String descriptor;
+    final String descriptor;
     
-    Type() { }
     Type(String descriptor) { this.descriptor = descriptor; }
     
     public final String getDescriptor() { return descriptor; }
     public int hashCode() { return descriptor.hashCode(); }
-    public boolean equals(Object o) { return o instanceof Type && ((Type)o).descriptor.equals(descriptor); }
+    public boolean equals(java.lang.Object o) { return o instanceof Type && ((Type)o).descriptor.equals(descriptor); }
     
     public static Type arrayType(Type base) { return arrayType(base,1); }
     public static Type arrayType(Type base, int dim) {
@@ -37,12 +36,14 @@ public class Type {
     }
     
     public static class Object extends Type {
-        public Object(String s) {
+        public Object(String s) { super(_initHelper(s)); }
+        
+        private static String _initHelper(String s) {
             if(!s.startsWith("L") || !s.endsWith(";")) s = "L" + s.replace('.','/') + ";";
             if(!validDescriptorString(s)) throw new IllegalArgumentException("invalid descriptor string");
-            descriptor = s;
+            return s;
         }
-        
+
         public String[] components() {
             StringTokenizer st = new StringTokenizer(descriptor.substring(1,descriptor.length()-1),"/");
             String[] a = new String[st.countTokens()];
@@ -53,7 +54,7 @@ public class Type {
         public String internalForm() { return descriptor.substring(1,descriptor.length()-1); }
         
         // FEATURE: Do a proper check here (invalid chars, etc)
-        public boolean validDescriptorString(String s) {
+        static boolean validDescriptorString(String s) {
             return s.startsWith("L") && s.endsWith(";");
         }
     }    

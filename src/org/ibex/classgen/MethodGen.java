@@ -4,7 +4,10 @@ import java.io.*;
 import java.util.*;
 
 public class MethodGen implements CGConst {
-    private final static boolean EMIT_NOPS = true;
+    private final static boolean EMIT_NOPS = false;
+    
+    private static final int NO_CODE = -1;
+    private static final int FINISHED = -2;
     
     private final CPGen cp;
     private final String name;
@@ -75,7 +78,8 @@ public class MethodGen implements CGConst {
     
     private final void grow() { if(size == capacity) grow(size+1); }
     private final void grow(int newCap) {
-        if(capacity == -1) throw new IllegalStateException("method can't have code");
+        if(capacity == NO_CODE) throw new IllegalStateException("method can't have code");
+        if(capacity == FINISHED) throw new IllegalStateException("method has been finished");
         if(newCap <= capacity) return;
         newCap = Math.max(newCap,capacity == 0 ? 256 : capacity*2);
         
@@ -264,7 +268,7 @@ public class MethodGen implements CGConst {
     }
     
     private void _finish() throws IOException {
-        if(size == -1) return;
+        if(size == FINISHED) return;
         
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         DataOutput o = new DataOutputStream(baos);
@@ -464,7 +468,7 @@ public class MethodGen implements CGConst {
             o.writeShort(((CPGen.Ent)thrownExceptions.get(e.nextElement())).getIndex());
         attrs.add("Exceptions",baos.toByteArray());
         
-        size = -1;        
+        size = capacity = FINISHED;        
     }
         
     public void dump(DataOutput o) throws IOException {

@@ -371,6 +371,8 @@ public class MethodGen implements CGConst {
         
         int codeSize = p;
         
+        if(codeSize >= 65536) throw new ClassGen.Exn("method too large in size");
+        
         o.writeShort(maxStack);
         o.writeShort(maxLocals);
         o.writeInt(codeSize);
@@ -423,8 +425,14 @@ public class MethodGen implements CGConst {
                 default:
                     if((opdata & OP_BRANCH_FLAG) != 0) {
                         int v = pc[((Integer)arg).intValue()] - pc[i];
-                        if(v < -32768 || v > 32767) throw new ClassGen.Exn("overflow of s2 offset");
-                        o.writeShort(v);
+                        if(argLength == 2) {
+                            if(v < -32768 || v > 32767) throw new ClassGen.Exn("overflow of s2 offset");
+                            o.writeShort(v);
+                        } else if(argLength == 4) {
+                            o.writeInt(v);
+                        } else {
+                            throw new Error("should never happen");
+                        }
                     } else if((opdata & OP_CPENT_FLAG) != 0) {
                         int v = ((CPGen.Ent)arg).getIndex();
                         if(argLength == 1) o.writeByte(v);

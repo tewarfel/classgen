@@ -126,7 +126,7 @@ public class MethodGen implements CGConst {
         }
     }
     
-    private void set(int pos, byte op, Object arg) {
+    public void set(int pos, byte op, Object arg) {
         int iarg = arg instanceof Integer ? ((Integer)arg).intValue() : -1;
         
         switch(op) {
@@ -134,7 +134,7 @@ public class MethodGen implements CGConst {
             case FSTORE: case DLOAD: case DSTORE: case ALOAD: case ASTORE:
             {
                 if(iarg >= 0 && iarg <= 3) {
-                    int base = -1;
+                    byte base = 0;
                     switch(op) {
                         case ILOAD:  base = ILOAD_0; break;
                         case ISTORE: base = ISTORE_0; break;
@@ -147,10 +147,11 @@ public class MethodGen implements CGConst {
                         case ALOAD:  base = ALOAD_0; break;
                         case ASTORE: base = ASTORE_0; break;
                     }
-                    op = (byte)(base + iarg);
+                    op = (byte)((base&0xff) + iarg);
                 } else {
-                    if(iarg > maxLocals) maxLocals = iarg;
+                    if(iarg >= maxLocals) maxLocals = iarg + 1;
                 }
+                break;
             }
             case LDC:
                 if(arg instanceof Integer) { set(pos,op,iarg); return; }
@@ -170,7 +171,7 @@ public class MethodGen implements CGConst {
         _set(pos,op,arg);
     }
     
-    public final  void _set(int pos, byte op, Object arg) {
+    private final  void _set(int pos, byte op, Object arg) {
         if(capacity == -1) throw new IllegalStateException("method can't have code");
         if(size == -1) throw new IllegalStateException("method is finalized");
         if(!OP_VALID(op)) throw new IllegalArgumentException("unknown bytecode");
@@ -495,7 +496,7 @@ public class MethodGen implements CGConst {
             0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
             0x03, 0x05, 0x13, 0x15, 0x15, 0x03, 0x03, 0x03, 0x03, 0x03, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
             0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-            0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x13, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+            0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x03, 0x03, 0x03, 0x03, 0x03, 0x01, 0x01, 0x01, 0x01, 0x01,
             0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
             0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
             0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,

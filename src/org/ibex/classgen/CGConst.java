@@ -82,11 +82,11 @@ public interface CGConst {
     public static final byte BALOAD = (byte) 0x33; // 0
     public static final byte CALOAD = (byte) 0x34; // 0
     public static final byte SALOAD = (byte) 0x35; // 0
-    public static final byte ISTORE = (byte) 0x36; // 0
-    public static final byte LSTORE = (byte) 0x37; // 9
-    public static final byte FSTORE = (byte) 0x38; // 0
-    public static final byte DSTORE = (byte) 0x39; // 0
-    public static final byte ASTORE = (byte) 0x3A; // 0
+    public static final byte ISTORE = (byte) 0x36; // 1
+    public static final byte LSTORE = (byte) 0x37; // 1
+    public static final byte FSTORE = (byte) 0x38; // 1
+    public static final byte DSTORE = (byte) 0x39; // 1
+    public static final byte ASTORE = (byte) 0x3A; // 1
     public static final byte ISTORE_0 = (byte) 0x3B; // 0
     public static final byte ISTORE_1 = (byte) 0x3C; // 0
     public static final byte ISTORE_2 = (byte) 0x3D; // 0

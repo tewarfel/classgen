@@ -3,8 +3,6 @@ package org.ibex.classgen;
 import java.io.*;
 import java.util.*;
 
-// FEATURE: Support WIDE bytecodes
-
 /** A class representing a method in a generated classfile
     @see ClassGen#addMethod */
 public class MethodGen implements CGConst {
@@ -209,9 +207,6 @@ public class MethodGen implements CGConst {
                         case ASTORE: base = ASTORE_0; break;
                     }
                     op = (byte)((base&0xff) + n);
-                } else if(n >= 256) {
-                    arg = new Wide(op,n);
-                    op = WIDE;
                 } else {
                     arg = N(n);
                 }
@@ -234,20 +229,6 @@ public class MethodGen implements CGConst {
                 // set(int,byte,int) always handles these ops itself
                 set(pos,op,((Integer)arg).intValue());
                 return;
-            case RET:
-                if(((Integer)arg).intValue() > 255) {
-                    op = WIDE;
-                    arg = new Wide(RET,((Integer)arg).intValue());
-                }
-                break;
-            case IINC: {
-                Pair pair = (Pair) arg;
-                if(pair.i1 > 255 || pair.i2 < -128 || pair.i2 > 127) {
-                    op = WIDE;
-                    arg = new Wide(IINC,pair.i1,pair.i2);
-                }
-                break;
-            }
             case LDC:
                 // set(int,byte,int) always handles these opts itself
                 if(arg instanceof Integer) { set(pos,op,((Integer)arg).intValue()); return; }
@@ -278,7 +259,7 @@ public class MethodGen implements CGConst {
         @see MethodGen.TSI
         @see MethodGen.LSI
     */
-    public static class SI {
+    public static abstract class SI {
         public final Object[] targets;
         public Object defaultTarget;
 
@@ -290,7 +271,9 @@ public class MethodGen implements CGConst {
         public int size() { return targets.length; }
         
         public int getTarget(int pos) { return ((Integer)targets[pos]).intValue(); }
-        public int getDefaultTarget() { return ((Integer)defaultTarget).intValue(); }        
+        public int getDefaultTarget() { return ((Integer)defaultTarget).intValue(); }   
+        
+        abstract int length();
     }
     
     /** This class represents the arguments to the TABLESWITCH bytecode */
@@ -304,6 +287,8 @@ public class MethodGen implements CGConst {
         }
         public void setTargetForVal(int val, Object o) { setTarget(val-lo,o); }
         public void setTargetForVal(int val, int n) { setTarget(val-lo,n); }
+        
+        int length() { return 12 + targets.length * 4; } // 4bytes/target, hi, lo, default
     }
     
     /** This class represents the arguments to the LOOKUPSWITCH bytecode */
@@ -314,6 +299,8 @@ public class MethodGen implements CGConst {
            this.vals = new int[size];
         }
         public final void setVal(int pos, int val) { vals[pos] = val; }
+        
+        int length() { return 8 + targets.length * 8; } // key/val per target, default, count
     }
     
     /** This class represents the arguments to byecodes that take two integer arguments. */
@@ -366,6 +353,8 @@ public class MethodGen implements CGConst {
     private void _finish() throws IOException {
         if(size == FINISHED) return;
         
+        cp.stable();
+        
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         DataOutput o = new DataOutputStream(baos);
     
@@ -390,45 +379,59 @@ public class MethodGen implements CGConst {
             }
             
             switch(op) {
+                // Speical caculations
                 case GOTO:
                 case JSR: {
                     int arg = ((Integer)this.arg[i]).intValue();
                     if(arg < i && p - maxpc[arg] <= 32768) p += 3; 
                     else p += 5;
-                    break;
+                    continue;
                 }
                 case NOP:
                     if(EMIT_NOPS) p++;
-                    break;
+                    continue;
                 case LOOKUPSWITCH:
                 case TABLESWITCH: {
                     SI si = (SI) arg[i];
                     Object[] targets = si.targets;
                     for(j=0;j<targets.length;j++) targets[j] = resolveTarget(targets[j]);
                     si.defaultTarget = resolveTarget(si.defaultTarget);
-                    p += 1 + 3 + 4; // opcode itself, padding, default
-                    if(op == TABLESWITCH) p += 4 + 4 + targets.length * 4; // lo, hi, targets
-                    else p += 4 + targets.length * 4 * 2; // count, key,val * targets
-                    if(op == LOOKUPSWITCH) {
+                    p += 1 + 3 + si.length(); // opcode itself, padding, data
+                    if(op == LOOKUPSWITCH) { // verify sanity of lookupswitch vals
                         int[] vals = ((LSI)si).vals;
                         for(j=1;j<vals.length;j++)
                             if(vals[j] <= vals[j-1])
                                 throw new IllegalStateException("out of order/duplicate lookupswitch values");
                     }
+                    continue;
+                }
+                // May need widening
+                case ILOAD: case ISTORE: case LLOAD: case LSTORE: case FLOAD:
+                case FSTORE: case DLOAD: case DSTORE: case ALOAD: case ASTORE:
+                case RET: {
+                    int arg = ((Integer)this.arg[i]).intValue();
+                    if(arg > 255) {
+                        this.op[i] = WIDE;
+                        this.arg[i] = new Wide(op,arg);
+                    }
                     break;
                 }
-                case WIDE:
-                    p += 2 + (((Wide)arg[i]).op == IINC ? 4 : 2);
+                case IINC: {
+                    Pair pair = (Pair) this.arg[i];
+                    if(pair.i1 > 255 || pair.i2 < -128 || pair.i2 > 127) {
+                        this.op[i] = WIDE;
+                        this.arg[i] = new Wide(IINC,pair.i1,pair.i2);
+                    }
                     break;
+                }
                 case LDC:
                     j = ((CPGen.Ent)arg[i]).getIndex();
                     if(j >= 256) this.op[i] = op = LDC_W;
-                    // fall through
-                default:
-                    if((j = (opdata&OP_ARG_LENGTH_MASK)) == 7) throw new Error("shouldn't be here");
-                    p += 1 + j;
                     break;
+                default:
             }
+            if((j = (opdata&OP_ARG_LENGTH_MASK)) == 7) throw new Error("shouldn't be here");
+            p += 1 + j;
         }
         
         // Pass2 - Widen instructions if they can possibly be too short

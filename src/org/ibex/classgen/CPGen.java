@@ -86,8 +86,8 @@ class CPGen {
     /*
      * Methods
      */
-    public void seal() { if(state >= SEALED) throw new IllegalStateException(); state = SEALED; }
-    public void stable() { if(state >= STABLE) throw new IllegalStateException(); state = STABLE; }
+    public void seal() { if(state > SEALED) throw new IllegalStateException(); state = SEALED; }
+    public void stable() { if(state > STABLE) throw new IllegalStateException(); state = STABLE; }
     
     public final Ent get(Object o) { return (Ent) entries.get(o); }
     public final Ent getUtf8(String s) { return get(new Utf8Key(s)); }

@@ -7,6 +7,7 @@ public class ClassGen implements CGConst {
     private Type.Object thisType;
     private Type.Object superType;
     int flags;
+    private String sourceFile; 
     
     private Vector interfaces = new Vector();
     private Vector fields = new Vector();
@@ -42,6 +43,8 @@ public class ClassGen implements CGConst {
         return fg;
     }
     
+    public void setSourceFile(String sourceFile) { this.sourceFile = sourceFile; }
+    
     public void dump(String s) throws IOException { dump(new File(s)); }
     public void dump(File f) throws IOException {
         if(f.isDirectory()) {
@@ -55,6 +58,7 @@ public class ClassGen implements CGConst {
         }
         dump(new FileOutputStream(f));
     }
+    
     public void dump(OutputStream os) throws IOException {
         DataOutputStream dos = new DataOutputStream(new BufferedOutputStream(os));
         _dump(dos);
@@ -65,7 +69,12 @@ public class ClassGen implements CGConst {
         cp.add(thisType);
         cp.add(superType);
         for(int i=0;i<interfaces.size();i++) cp.add((Type.Object)interfaces.elementAt(i));
+        if(sourceFile != null && !attributes.contains("SourceFile")) attributes.add("SourceFile",cp.addUtf8(sourceFile));
+        
+        cp.stable();
+        
         for(int i=0;i<methods.size();i++) ((MethodGen)methods.elementAt(i)).finish();
+        
         cp.seal();
         
         o.writeInt(0xcafebabe); // magic
@@ -92,17 +101,8 @@ public class ClassGen implements CGConst {
         attributes.dump(o); // attributes        
     }
     
-    // FEATURE: Make some of these checked exceptions?
     public static class Exn extends RuntimeException {
         public Exn(String s) { super(s); }
-    }
-
-    // FEATURE: Remove these - they are just here to be compatible with the old api
-    public final static MethodRef methodRef(Type.Object c, String name, Type ret, Type[] args) {        
-        return new MethodRef(c,name,ret,args);
-    }
-    public final static FieldRef fieldRef(Type.Object c, String name, Type type) {
-        return new FieldRef(c,name,type);
     }
     
     public static class NameAndType {
@@ -134,7 +134,43 @@ public class ClassGen implements CGConst {
         public InterfaceMethodRef(Type.Object c, NameAndType t) { super(c,t); }
     }
     
-    public static void main(String[] args) throws Exception {
+    static class AttrGen {
+        private final CPGen cp;
+        private final Hashtable ht = new Hashtable();
+        
+        public AttrGen(CPGen cp) {
+            this.cp = cp;
+        }
+        
+        public void add(String s, Object data) {
+            cp.addUtf8(s);
+            ht.put(s,data);
+        }
+        
+        public boolean contains(String s) { return ht.get(s) != null; }
+        
+        public int size() { return ht.size(); }
+        
+        public void dump(DataOutput o) throws IOException {
+            for(Enumeration e = ht.keys(); e.hasMoreElements();) {
+                String name = (String) e.nextElement();
+                Object val = ht.get(name);
+                o.writeShort(cp.getUtf8Index(name));
+                if(val instanceof byte[]) {
+                    byte[] buf = (byte[]) val;
+                    o.writeInt(buf.length);
+                    o.write(buf);
+                } else if(val instanceof CPGen.Ent) {
+                    o.writeInt(2);
+                    o.writeShort(((CPGen.Ent)val).getIndex());
+                } else {
+                    throw new Error("should never happen");
+                }
+            }
+        }
+    }
+    
+    /*public static void main(String[] args) throws Exception {
         Type.Object me = new Type.Object("Test");
         ClassGen cg = new ClassGen("Test","java.lang.Object",ACC_PUBLIC|ACC_SUPER|ACC_FINAL);
         FieldGen fg = cg.addField("foo",Type.INT,ACC_PUBLIC|ACC_STATIC);
@@ -143,7 +179,7 @@ public class ClassGen implements CGConst {
         mg.setMaxLocals(1);
         mg.addPushConst(0);
         //mg.add(ISTORE_0);
-        mg.add(PUTSTATIC,cg.fieldRef(me,"foo",Type.INT));
+        mg.add(PUTSTATIC, fieldRef(me,"foo",Type.INT));
         int top = mg.size();
         mg.add(GETSTATIC,cg.fieldRef(new Type.Object("java.lang.System"),"out",new Type.Object("java.io.PrintStream")));
         //mg.add(ILOAD_0);
@@ -160,5 +196,5 @@ public class ClassGen implements CGConst {
         mg.add(IF_ICMPLT,top);
         mg.add(RETURN);
         cg.dump("Test.class");
-    }
+    }*/
 }

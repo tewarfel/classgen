@@ -11,7 +11,10 @@ class CPGen {
     private Hashtable entries = new Hashtable();
     private int nextIndex = 1; // 0 is reserved
     private int count;
-    private boolean sealed;
+    private int state;
+    private static final int OPEN = 0;
+    private static final int STABLE = 1; // existing entries won't change
+    private static final int SEALED = 2; // no new entries
     
     CPGen() { }
     
@@ -71,7 +74,8 @@ class CPGen {
     /*
      * Methods
      */
-    public void seal() { sealed = true; }
+    public void seal() { if(state >= SEALED) throw new IllegalStateException(); state = SEALED; }
+    public void stable() { if(state >= STABLE) throw new IllegalStateException(); state = STABLE; }
     
     public final Ent get(Object o) { return (Ent) entries.get(o); }
     public final Ent getUtf8(String s) { return get(new Utf8Key(s)); }
@@ -89,9 +93,8 @@ class CPGen {
     public final Ent addNameAndType(String name, String descriptor) { return add(new ClassGen.NameAndType(name,descriptor)); }
     public final Ent addUtf8(String s) { return add(new Utf8Key(s)); }
     
-    // FEATURE: Don't resolve indexes until dump (for optimize) 
     public final Ent add(Object o) {
-        if(sealed) throw new IllegalStateException("constant pool is sealed");
+        if(state == SEALED) throw new IllegalStateException("constant pool is sealed");
             
         Ent ent = get(o);
         if(ent != null) return ent;

@@ -11,8 +11,8 @@ public class MethodGen implements CGConst {
     private final Type ret;
     private final Type[] args;
     private final int flags;
-    private final AttrGen attrs;
-    private final AttrGen codeAttrs;
+    private final ClassGen.AttrGen attrs;
+    private final ClassGen.AttrGen codeAttrs;
     private final Hashtable exnTable = new Hashtable();
     private final Hashtable thrownExceptions = new Hashtable();
     
@@ -33,8 +33,8 @@ public class MethodGen implements CGConst {
         this.args = args;
         this.flags = flags;
         
-        attrs = new AttrGen(cp);
-        codeAttrs = new AttrGen(cp);
+        attrs = new ClassGen.AttrGen(cp);
+        codeAttrs = new ClassGen.AttrGen(cp);
         
         cp.addUtf8(name);
         cp.addUtf8(getDescriptor());
@@ -91,9 +91,6 @@ public class MethodGen implements CGConst {
     }
     public final int size() { return size; }
     
-    // FEATURE: Deprecate this
-    public final int addPushConst(int n) { return add(LDC,n); }
-
     // These two are optimized for speed, they don't call set() below
     public final int add(byte op) {
         int s = size;

@@ -7,10 +7,10 @@ import java.io.*;
 public class ClassGen implements CGConst {
     private final Type.Object thisType;
     private final Type.Object superType;
+    private final Type.Object[] interfaces;
     final int flags;
     
     private String sourceFile; 
-    private final Vector interfaces = new Vector();
     private final Vector fields = new Vector();
     private final Vector methods = new Vector();
     
@@ -21,17 +21,23 @@ public class ClassGen implements CGConst {
     public ClassGen(String name, String superName, int flags) {
         this(new Type.Object(name),new Type.Object(superName),flags);
     }
+
+    /** @see #ClassGen(Type.Object,Type.Object,int,Type.Object[]) */
+    public ClassGen(Type.Object thisType,Type.Object superType, int flags) {
+        this(thisType,superType,flags,null);
+    }
     
     /** Creates a new ClassGen object 
         @param thisType The type of the class to generate
-        @param superType The superclas of the generated class (commonly Type.OBJECT) 
+        @param superType The superclass of the generated class (commonly Type.OBJECT) 
         @param flags The access flags for this class (ACC_PUBLIC, ACC_FINAL, ACC_SUPER, ACC_INTERFACE, and ACC_ABSTRACT)
     */
-    public ClassGen(Type.Object thisType,Type.Object superType, int flags) {
+    public ClassGen(Type.Object thisType,Type.Object superType, int flags, Type.Object[] interfaces) {
         if((flags & ~(ACC_PUBLIC|ACC_FINAL|ACC_SUPER|ACC_INTERFACE|ACC_ABSTRACT)) != 0)
             throw new IllegalArgumentException("invalid flags");
         this.thisType = thisType;
         this.superType = superType;
+        this.interfaces = interfaces;
         this.flags = flags;
         
         cp = new CPGen();
@@ -113,7 +119,7 @@ public class ClassGen implements CGConst {
     private void _dump(DataOutput o) throws IOException {
         cp.add(thisType);
         cp.add(superType);
-        for(int i=0;i<interfaces.size();i++) cp.add((Type.Object)interfaces.elementAt(i));
+        if(interfaces != null) for(int i=0;i<interfaces.length;i++) cp.add(interfaces[i]);
         if(sourceFile != null && !attributes.contains("SourceFile")) attributes.add("SourceFile",cp.addUtf8(sourceFile));
         
         cp.stable();
@@ -134,8 +140,8 @@ public class ClassGen implements CGConst {
         o.writeShort(cp.getIndex(thisType)); // this_class
         o.writeShort(cp.getIndex(superType)); // super_class
         
-        o.writeShort(interfaces.size()); // interfaces_count
-        for(int i=0;i<interfaces.size();i++) o.writeShort(cp.getIndex(interfaces.elementAt(i))); // interfaces
+        o.writeShort(interfaces==null ? 0 : interfaces.length); // interfaces_count
+        if(interfaces != null) for(int i=0;i<interfaces.length;i++) o.writeShort(cp.getIndex(interfaces[i])); // interfaces
         
         o.writeShort(fields.size()); // fields_count
         for(int i=0;i<fields.size();i++) ((FieldGen)fields.elementAt(i)).dump(o); // fields

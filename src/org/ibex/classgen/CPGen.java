@@ -219,8 +219,6 @@ class CPGen {
         if(state != OPEN) throw new IllegalStateException("can't optimize a stable constant pool");
         Ent[] ents = asArray();
         Sort.sort(ents,reverseCompareFunc);
-        for(int i=0;i<ents.length;i++)
-            System.err.println("" + i + " -> " + ents[i].debugToString() + " (" + ents[i].n + ")");
         state = STABLE;
         assignIndex(ents);
     }
@@ -229,7 +227,7 @@ class CPGen {
         Ent[] ents = asArray();
         Sort.sort(ents,compareFunc);
         for(int i=0;i<ents.length;i++) {
-            System.err.println("" + ents[i].n + ": " + ents[i].debugToString());
+            //System.err.println("" + ents[i].n + ": " + ents[i].debugToString());
             ents[i].dump(o);
         }
     }

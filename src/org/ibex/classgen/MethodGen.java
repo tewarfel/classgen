@@ -193,6 +193,7 @@ public class MethodGen implements CGConst {
                 break;
             case ILOAD: case ISTORE: case LLOAD: case LSTORE: case FLOAD:
             case FSTORE: case DLOAD: case DSTORE: case ALOAD: case ASTORE:
+                if(n >= maxLocals) maxLocals = n + 1;
                 if(n >= 0 && n <= 3) {
                     byte base = 0;
                     switch(op) {
@@ -208,8 +209,10 @@ public class MethodGen implements CGConst {
                         case ASTORE: base = ASTORE_0; break;
                     }
                     op = (byte)((base&0xff) + n);
+                } else if(n >= 256) {
+                    arg = new Wide(op,n);
+                    op = WIDE;
                 } else {
-                    if(n >= maxLocals) maxLocals = n + 1;
                     arg = N(n);
                 }
                 break;
@@ -231,6 +234,20 @@ public class MethodGen implements CGConst {
                 // set(int,byte,int) always handles these ops itself
                 set(pos,op,((Integer)arg).intValue());
                 return;
+            case RET:
+                if(((Integer)arg).intValue() > 255) {
+                    op = WIDE;
+                    arg = new Wide(RET,((Integer)arg).intValue());
+                }
+                break;
+            case IINC: {
+                Pair pair = (Pair) arg;
+                if(pair.i1 > 255 || pair.i2 < -128 || pair.i2 > 127) {
+                    op = WIDE;
+                    arg = new Wide(IINC,pair.i1,pair.i2);
+                }
+                break;
+            }
             case LDC:
                 // set(int,byte,int) always handles these opts itself
                 if(arg instanceof Integer) { set(pos,op,((Integer)arg).intValue()); return; }
@@ -305,6 +322,14 @@ public class MethodGen implements CGConst {
         public int i2;
         public Pair(int i1, int i2) { this.i1 = i1; this.i2 = i2; }
     }
+    
+    public static class Wide {
+        public final byte op;
+        public final int varNum;
+        public final int n;
+        Wide(byte op, int varNum) { this(op,varNum,0); }
+        Wide(byte op, int varNum, int n) { this.op = op; this.varNum = varNum; this.n = n; }
+    }
         
     /** Sets the maximum number of locals in the function to <i>maxLocals</i>. NOTE: This defaults to 0 and is automatically increased as
         necessary when *LOAD/*STORE bytecodes are added. You do not need to call this function in most cases */
@@ -366,9 +391,12 @@ public class MethodGen implements CGConst {
             
             switch(op) {
                 case GOTO:
-                case JSR:
-                    p += 3;
+                case JSR: {
+                    int arg = ((Integer)this.arg[i]).intValue();
+                    if(arg < i && p - maxpc[arg] <= 32768) p += 3; 
+                    else p += 5;
                     break;
+                }
                 case NOP:
                     if(EMIT_NOPS) p++;
                     break;
@@ -389,6 +417,9 @@ public class MethodGen implements CGConst {
                     }
                     break;
                 }
+                case WIDE:
+                    p += 2 + (((Wide)arg[i]).op == IINC ? 4 : 2);
+                    break;
                 case LDC:
                     j = ((CPGen.Ent)arg[i]).getIndex();
                     if(j >= 256) this.op[i] = op = LDC_W;
@@ -432,6 +463,9 @@ public class MethodGen implements CGConst {
                     else p += 4 + si.size() * 4 * 2; // count, key,val * targets
                     break;
                 }
+                case WIDE:
+                    p += 2 + (((Wide)arg[i]).op == IINC ? 4 : 2);
+                    break;                
                 default: {
                     int l = OP_DATA[op&0xff] & OP_ARG_LENGTH_MASK;
                     if(l == 7) throw new Error("shouldn't be here");
@@ -439,7 +473,6 @@ public class MethodGen implements CGConst {
                 }
             }
         }
-        
         int codeSize = p;
         
         if(codeSize >= 65536) throw new ClassGen.Exn("method too large in size");
@@ -453,8 +486,7 @@ public class MethodGen implements CGConst {
             byte op = this.op[i];
             int opdata = OP_DATA[op&0xff];
             if(op == NOP && !EMIT_NOPS) continue;
-            
-            o.writeByte(op&0xff);
+            o.writeByte(op);
             int argLength = opdata & OP_ARG_LENGTH_MASK;
             
             if(argLength == 0) continue; // skip if no args
@@ -491,8 +523,13 @@ public class MethodGen implements CGConst {
                     }
                     break;
                 }
-                case WIDE:
-                    throw new Error("WIDE instruction not yet supported");
+                case WIDE: {
+                    Wide wide = (Wide) arg;
+                    o.writeByte(wide.op);
+                    o.writeShort(wide.varNum);
+                    if(wide.op == IINC) o.writeShort(wide.n);
+                    break;
+                }
                     
                 default:
                     if((opdata & OP_BRANCH_FLAG) != 0) {

@@ -129,7 +129,7 @@ public class MethodGen implements CGConst {
                     case 5:  op = ICONST_5;  break OUTER;
                 }
                 if(n >= -128 && n <= 127) { op = BIPUSH; arg = N(n); } 
-                else if(n >= -32767 && n <= 32767) { op = SIPUSH; arg = N(n); }
+                else if(n >= -32768 && n <= 32767) { op = SIPUSH; arg = N(n); }
                 else { arg = cp.add(N(n)); }
                 break;
             case ILOAD: case ISTORE: case LLOAD: case LSTORE: case FLOAD:

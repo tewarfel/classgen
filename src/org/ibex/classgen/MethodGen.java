@@ -217,7 +217,6 @@ public class MethodGen implements CGConst {
     public static class TSI extends SI {
         public final int lo;
         public final int hi;
-        public int defaultTarget = -1;
         public TSI(int lo, int hi) {
             super(hi-lo+1);
             this.lo = lo;
@@ -397,6 +396,7 @@ public class MethodGen implements CGConst {
                     if(pair.i1 > 255 || pair.i2 < -128 || pair.i2 > 127) throw new ClassGen.Exn("overflow of iinc arg"); 
                     o.writeByte(pair.i1);
                     o.writeByte(pair.i2);
+                    break;
                 }
                 case TABLESWITCH:
                 case LOOKUPSWITCH: {

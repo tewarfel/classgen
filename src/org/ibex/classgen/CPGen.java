@@ -71,6 +71,18 @@ class CPGen {
         public int hashCode() { return ~s.hashCode(); }
     }
         
+    static class NameAndTypeKey {
+        String name;
+        String type;
+        NameAndTypeKey(String name, String type) { this.name = name; this.type = type; }
+        public boolean equals(Object o_) {
+            if(!(o_ instanceof NameAndTypeKey)) return false;
+            NameAndTypeKey o = (NameAndTypeKey) o_;
+            return o.name.equals(name) && o.type.equals(type);
+        }
+        public int hashCode() { return name.hashCode() ^ type.hashCode(); }
+    }
+    
     /*
      * Methods
      */
@@ -90,7 +102,7 @@ class CPGen {
         return e.getIndex();
     }
     
-    public final Ent addNameAndType(String name, String descriptor) { return add(new ClassGen.NameAndType(name,descriptor)); }
+    public final Ent addNameAndType(String name, String descriptor) { return add(new NameAndTypeKey(name,descriptor)); }
     public final Ent addUtf8(String s) { return add(new Utf8Key(s)); }
     
     public final Ent add(Object o) {
@@ -127,19 +139,19 @@ class CPGen {
             Utf8Ent ue = new Utf8Ent();
             ue.s = ((Utf8Key)o).s;
             ent = ue;
-        } else if(o instanceof ClassGen.NameAndType) {
+        } else if(o instanceof NameAndTypeKey) {
             CPRefEnt ce = new CPRefEnt(12);
-            ClassGen.NameAndType key = (ClassGen.NameAndType) o;
+            NameAndTypeKey key = (NameAndTypeKey) o;
             ce.e1 = addUtf8(key.name);
             ce.e2 = addUtf8(key.type);
             ent = ce;
-        } else if(o instanceof ClassGen.FieldMethodRef) {
-            ClassGen.FieldMethodRef key = (ClassGen.FieldMethodRef) o;
-            int tag = o instanceof FieldRef ? 9 : o instanceof MethodRef ? 10 : o instanceof ClassGen.InterfaceMethodRef ? 11 : 0;
+        } else if(o instanceof ClassGen.FieldOrMethodRef) {
+            ClassGen.FieldOrMethodRef key = (ClassGen.FieldOrMethodRef) o;
+            int tag = o instanceof FieldRef ? 9 : o instanceof MethodRef ? 10 : o instanceof MethodRef.I ? 11 : 0;
             if(tag == 0) throw new Error("should never happen");
             CPRefEnt ce = new CPRefEnt(tag);
             ce.e1 = add(key.klass);
-            ce.e2 = add(key.nameAndType);
+            ce.e2 = addNameAndType(key.name,key.descriptor);
             ent = ce;
         } else {
             throw new IllegalArgumentException("Unknown type passed to add");

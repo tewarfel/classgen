@@ -105,33 +105,19 @@ public class ClassGen implements CGConst {
         public Exn(String s) { super(s); }
     }
     
-    public static class NameAndType {
-        String name;
-        String type;
-        NameAndType(String name, String type) { this.name = name; this.type = type; }
-        public boolean equals(Object o_) {
-            if(!(o_ instanceof NameAndType)) return false;
-            NameAndType o = (NameAndType) o_;
-            return o.name.equals(name) && o.type.equals(type);
-        }
-        public int hashCode() { return name.hashCode() ^ type.hashCode(); }
-    }
-    
-    public static abstract class FieldMethodRef {
+    public static abstract class FieldOrMethodRef {
         Type.Object klass;
-        NameAndType nameAndType;
-        FieldMethodRef(Type.Object klass, NameAndType nameAndType) { this.klass = klass; this.nameAndType = nameAndType; }
+        String name;
+        String descriptor;
+        
+        FieldOrMethodRef(Type.Object klass, String name, String descriptor) { this.klass = klass; this.name = name; this.descriptor = descriptor; }
+        FieldOrMethodRef(FieldOrMethodRef o) { this.klass = o.klass; this.name = o.name; this.descriptor = o.descriptor; }
         public boolean equals(Object o_) {
-            if(!(o_ instanceof FieldMethodRef)) return false;
-            FieldMethodRef o = (FieldMethodRef) o_;
-            return o.klass.equals(klass) && o.nameAndType.equals(nameAndType);
+            if(!(o_ instanceof FieldOrMethodRef)) return false;
+            FieldOrMethodRef o = (FieldOrMethodRef) o_;
+            return o.klass.equals(klass) && o.name.equals(name) && o.descriptor.equals(descriptor);
         }
-        public int hashCode() { return klass.hashCode() ^ nameAndType.hashCode(); }
-    }
-    
-    public static class InterfaceMethodRef extends FieldMethodRef {
-        public InterfaceMethodRef(MethodRef r) { super(r.klass,r.nameAndType); }
-        public InterfaceMethodRef(Type.Object c, NameAndType t) { super(c,t); }
+        public int hashCode() { return klass.hashCode() ^ name.hashCode() ^ descriptor.hashCode(); }
     }
     
     static class AttrGen {

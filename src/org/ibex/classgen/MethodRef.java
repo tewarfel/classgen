@@ -1,16 +1,13 @@
 package org.ibex.classgen;
 
-public class MethodRef extends ClassGen.FieldMethodRef {
-    public MethodRef(Type.Object c, ClassGen.NameAndType t) { super(c,t); }
-    public MethodRef(Type.Object c, String name, String descriptor) {
-        this(c,new ClassGen.NameAndType(name,descriptor));
-    }
+public class MethodRef extends ClassGen.FieldOrMethodRef {
     public MethodRef(Type.Object c, String name, Type ret, Type[] args) {
-        this(c,name,getDescriptor(ret,args));
+        super(c,name,getDescriptor(ret,args));
     }
     public MethodRef(String s, String name, Type ret, Type[] args) {
         this(new Type.Object(s),name,ret,args);
     }
+    MethodRef(MethodRef i) { super(i); }
     
     static String getDescriptor(Type ret, Type[] args) {
         StringBuffer sb = new StringBuffer(args.length*4);
@@ -20,5 +17,10 @@ public class MethodRef extends ClassGen.FieldMethodRef {
         sb.append(ret.getDescriptor());
         return sb.toString();
     }
+    
+    public static class I extends MethodRef {
+        public I(Type.Object c, String name, Type ret, Type[] args) { super(c,name,ret,args); }
+        public I(String s, String name, Type ret, Type[] args) { super(s,name,ret,args); }
+        I(MethodRef m) { super(m); }
+    }
 }
-

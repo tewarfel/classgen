@@ -113,74 +113,84 @@ public class MethodGen implements CGConst {
     
     
     public final void set(int pos, byte op, boolean b) { set(pos,op,b?1:0); }
+    
+    // This MUST handle x{LOAD,STORE} and LDC with an int arg WITHOUT falling back to set(int,byte,Object)
     public final void set(int pos, byte op, int n) {
-        if(op == LDC) {
-            switch(n) {
-                case -1: set(pos,ICONST_M1); return;
-                case 0:  set(pos,ICONST_0);  return;
-                case 1:  set(pos,ICONST_1);  return;
-                case 2:  set(pos,ICONST_2);  return; 
-                case 3:  set(pos,ICONST_3);  return;
-                case 4:  set(pos,ICONST_4);  return;
-                case 5:  set(pos,ICONST_5);  return;
-            }
-            Object arg;
-            if(n >= -128 && n <= 127) { op = BIPUSH; arg = N(n); } 
-            else if(n >= -32767 && n <= 32767) { op = SIPUSH; arg = N(n); }
-            else { arg = cp.add(N(n)); }
-            this.op[pos] = op;
-            this.arg[pos] = arg;
-        } else {
-            set(pos,op,N(n));
-        }
+        Object arg = null;
+        OUTER: switch(op) {
+            case LDC:
+                switch(n) {
+                    case -1: op = ICONST_M1; break OUTER;
+                    case 0:  op = ICONST_0;  break OUTER;
+                    case 1:  op = ICONST_1;  break OUTER;
+                    case 2:  op = ICONST_2;  break OUTER; 
+                    case 3:  op = ICONST_3;  break OUTER;
+                    case 4:  op = ICONST_4;  break OUTER;
+                    case 5:  op = ICONST_5;  break OUTER;
+                }
+                if(n >= -128 && n <= 127) { op = BIPUSH; arg = N(n); } 
+                else if(n >= -32767 && n <= 32767) { op = SIPUSH; arg = N(n); }
+                else { arg = cp.add(N(n)); }
+                break;
+            case ILOAD: case ISTORE: case LLOAD: case LSTORE: case FLOAD:
+            case FSTORE: case DLOAD: case DSTORE: case ALOAD: case ASTORE:
+                if(n >= 0 && n <= 3) {
+                    byte base = 0;
+                    switch(op) {
+                        case ILOAD:  base = ILOAD_0;  break;
+                        case ISTORE: base = ISTORE_0; break;
+                        case LLOAD:  base = LLOAD_0;  break;
+                        case LSTORE: base = LSTORE_0; break; 
+                        case FLOAD:  base = FLOAD_0;  break;
+                        case FSTORE: base = FSTORE_0; break;
+                        case DLOAD:  base = DLOAD_0;  break;
+                        case DSTORE: base = DSTORE_0; break;
+                        case ALOAD:  base = ALOAD_0;  break;
+                        case ASTORE: base = ASTORE_0; break;
+                    }
+                    op = (byte)((base&0xff) + n);
+                } else {
+                    if(n >= maxLocals) maxLocals = n + 1;
+                    arg = N(n);
+                }
+                break;
+            default:
+                set(pos,op,N(n));
+                return;
+        }            
+        this.op[pos] = op;
+        this.arg[pos] = arg;
     }
     
-    public void set(int pos, byte op, Object arg) {
+    public final void set(int pos, byte op, Object arg) {
         switch(op) {
             case ILOAD: case ISTORE: case LLOAD: case LSTORE: case FLOAD:
             case FSTORE: case DLOAD: case DSTORE: case ALOAD: case ASTORE:
-            {
-                int iarg = ((Integer)arg).intValue();
-                if(iarg >= 0 && iarg <= 3) {
-                    byte base = 0;
-                    switch(op) {
-                        case ILOAD:  base = ILOAD_0; break;
-                        case ISTORE: base = ISTORE_0; break;
-                        case LLOAD:  base = LLOAD_0; break;
-                        case LSTORE: base = LSTORE_0; break; 
-                        case FLOAD:  base = FLOAD_0; break;
-                        case FSTORE: base = FSTORE_0; break;
-                        case DLOAD:  base = DLOAD_0; break;
-                        case DSTORE: base = DSTORE_0; break;
-                        case ALOAD:  base = ALOAD_0; break;
-                        case ASTORE: base = ASTORE_0; break;
-                    }
-                    op = (byte)((base&0xff) + iarg);
-                } else {
-                    if(iarg >= maxLocals) maxLocals = iarg + 1;
-                }
-                break;
-            }
+                // set(int,byte,int) always handles these ops itself
+                set(pos,op,((Integer)arg).intValue());
+                return;
             case LDC:
+                // set(int,byte,int) always handles these opts itself
                 if(arg instanceof Integer) { set(pos,op,((Integer)arg).intValue()); return; }
                 if(arg instanceof Boolean) { set(pos,op,((Boolean)arg).booleanValue()); return; }
+                
                 if(arg instanceof Long) {
                     long l = ((Long)arg).longValue();
-                    if(l == 0L) { set(pos,LCONST_0); return; }
-                    if(l == 1L) { set(pos,LCONST_1); return; }
+                    if(l == 0L) { this.op[pos] = LCONST_0; return; }
+                    if(l == 1L) { this.op[pos] = LCONST_1; return; }
                 }
                 
                 if(arg instanceof Long || arg instanceof Double) op = LDC2_W;
-                // fall through
-            default: {
-                int opdata = OP_DATA[op&0xff];
-                if((opdata&OP_CPENT_FLAG) != 0 && !(arg instanceof CPGen.Ent))
-                    arg = cp.add(arg);
-                else if((opdata&OP_VALID_FLAG) == 0)
-                    throw new IllegalArgumentException("unknown bytecode");
                 break;
-            }
+            case INVOKEINTERFACE:
+                if(arg instanceof MethodRef) arg = new MethodRef.I((MethodRef)arg);
+                break;
         }
+        int opdata = OP_DATA[op&0xff];
+        if((opdata&OP_CPENT_FLAG) != 0 && !(arg instanceof CPGen.Ent))
+            arg = cp.add(arg);
+        else if((opdata&OP_VALID_FLAG) == 0)
+            throw new IllegalArgumentException("unknown bytecode");
         this.op[pos] = op;
         this.arg[pos] = arg;
     }
@@ -197,7 +207,7 @@ public class MethodGen implements CGConst {
         public int size() { return targets.length; }
         
         public int getTarget(int pos) { return ((Integer)targets[pos]).intValue(); }
-        public int getDefaultTarget() { return ((Integer)defaultTarget).intValue(); }
+        public int getDefaultTarget() { return ((Integer)defaultTarget).intValue(); }        
     }
     
     public static class TSI extends SI {
@@ -340,7 +350,7 @@ public class MethodGen implements CGConst {
                 case TABLESWITCH:
                 case LOOKUPSWITCH: {
                     SI si = (SI) arg[i];
-                    p++; // opcpde itself
+                    p++; // opcode itself
                     p = (p + 3) & ~3; // padding
                     p += 4; // default
                     if(op == TABLESWITCH) p += 4 + 4 + si.size() * 4; // lo, hi, targets
@@ -403,6 +413,8 @@ public class MethodGen implements CGConst {
                     }
                     break;
                 }
+                case WIDE:
+                    throw new Error("WIDE instruction not yet supported");
                     
                 default:
                     if((opdata & OP_BRANCH_FLAG) != 0) {
@@ -414,7 +426,7 @@ public class MethodGen implements CGConst {
                         if(argLength == 1) o.writeByte(v);
                         else if(argLength == 2) o.writeShort(v);
                         else throw new Error("should never happen");
-                    } else if(argLength == -1) {
+                    } else if(argLength == 7) {
                         throw new Error("should never happen - variable length instruction not explicitly handled");
                     } else {
                         int iarg  = ((Integer)arg).intValue();

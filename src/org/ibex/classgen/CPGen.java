@@ -18,7 +18,7 @@ class CPGen {
     /*
      * Entries 
      */
-    abstract static class Ent implements Sort.Comparable {
+    abstract static class Ent {
         int index;
         int tag;
         
@@ -27,14 +27,6 @@ class CPGen {
         int getIndex() { return index; }
         
         void dump(DataOutput o) throws IOException { o.writeByte(tag); }
-        
-        public int compareTo(Object o) {
-            if(!(o instanceof Ent)) return 1;
-            int oi = ((Ent)o).index;
-            if(index < oi) return -1;
-            if(index > oi) return 1;
-            return 0;
-        }
     }
     
     static class OneU4Ent extends Ent {
@@ -162,15 +154,20 @@ class CPGen {
     
     public int size() { return nextIndex; }
     
+    private static final Sort.CompareFunc compareFunc = new Sort.CompareFunc() {
+        public int compare(Object a_, Object b_) {
+            return ((Ent)a_).index - ((Ent)b_).index;
+        }
+    };
     public void dump(DataOutput o) throws IOException {
         Ent[] ents = new Ent[count];
         int i=0;
         Enumeration e = entries.keys();
         while(e.hasMoreElements()) ents[i++] = (Ent) entries.get(e.nextElement());
         if(i != count) throw new Error("should never happen");
-        Sort.sort(ents);
+        Sort.sort(ents,compareFunc);
         for(i=0;i<ents.length;i++) {
-            System.err.println("" + (i+1) + ": " + ents[i]);
+            //System.err.println("" + (i+1) + ": " + ents[i]);
             ents[i].dump(o);
         }
     }

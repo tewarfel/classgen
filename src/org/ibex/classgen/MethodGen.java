@@ -75,6 +75,7 @@ public class MethodGen implements CGConst {
     
     private final void grow() { if(size == capacity) grow(size+1); }
     private final void grow(int newCap) {
+        if(capacity == -1) throw new IllegalStateException("method can't have code");
         if(newCap <= capacity) return;
         newCap = Math.max(newCap,capacity == 0 ? 256 : capacity*2);
         
@@ -93,18 +94,26 @@ public class MethodGen implements CGConst {
     // FEATURE: Deprecate this
     public final int addPushConst(int n) { return add(LDC,n); }
 
-    public final int add(byte op, Object arg) { grow(); set(size,op,arg); return size++; }
-    public final int add(byte op, boolean arg) { grow(); set(size,op,arg); return size++; }
-    public final int add(byte op, int arg) { grow(); set(size,op,arg); return size++; }
-    public final int add(byte op) { grow(); set(size,op); return size++; }
+    // These two are optimized for speed, they don't call set() below
+    public final int add(byte op) {
+        int s = size;
+        if(s == capacity) grow();
+        this.op[s] = op;
+        size++;
+        return s;
+    }
+    public final void set(int pos, byte op) { this.op[pos] = op; }
         
+    public final int add(byte op, Object arg) { if(capacity == size) grow(); set(size,op,arg); return size++; }
+    public final int add(byte op, boolean arg) { if(capacity == size) grow(); set(size,op,arg); return size++; }
+    public final int add(byte op, int arg) { if(capacity == size) grow(); set(size,op,arg); return size++; }
+    
     public final byte get(int pos) { return op[pos]; }
     public final Object getArg(int pos) { return arg[pos]; }
     
     public final void setArg(int pos, int arg) { set(pos,op[pos],N(arg)); }
     public final void setArg(int pos, Object arg) { set(pos,op[pos],arg); }
     
-    public final void set(int pos, byte op) { set(pos,op,null); }
     
     public final void set(int pos, byte op, boolean b) { set(pos,op,b?1:0); }
     public final void set(int pos, byte op, int n) {
@@ -118,21 +127,23 @@ public class MethodGen implements CGConst {
                 case 4:  set(pos,ICONST_4);  return;
                 case 5:  set(pos,ICONST_5);  return;
             }
-            if(n >= -128 && n <= 127) set(pos,BIPUSH,N(n)); 
-            else if(n >= -32767 && n <= 32767) set(pos,SIPUSH,N(n));
-            else set(pos,LDC,cp.add(N(n)));
+            Object arg;
+            if(n >= -128 && n <= 127) { op = BIPUSH; arg = N(n); } 
+            else if(n >= -32767 && n <= 32767) { op = SIPUSH; arg = N(n); }
+            else { arg = cp.add(N(n)); }
+            this.op[pos] = op;
+            this.arg[pos] = arg;
         } else {
             set(pos,op,N(n));
         }
     }
     
     public void set(int pos, byte op, Object arg) {
-        int iarg = arg instanceof Integer ? ((Integer)arg).intValue() : -1;
-        
         switch(op) {
             case ILOAD: case ISTORE: case LLOAD: case LSTORE: case FLOAD:
             case FSTORE: case DLOAD: case DSTORE: case ALOAD: case ASTORE:
             {
+                int iarg = ((Integer)arg).intValue();
                 if(iarg >= 0 && iarg <= 3) {
                     byte base = 0;
                     switch(op) {
@@ -154,7 +165,7 @@ public class MethodGen implements CGConst {
                 break;
             }
             case LDC:
-                if(arg instanceof Integer) { set(pos,op,iarg); return; }
+                if(arg instanceof Integer) { set(pos,op,((Integer)arg).intValue()); return; }
                 if(arg instanceof Boolean) { set(pos,op,((Boolean)arg).booleanValue()); return; }
                 if(arg instanceof Long) {
                     long l = ((Long)arg).longValue();
@@ -164,18 +175,15 @@ public class MethodGen implements CGConst {
                 
                 if(arg instanceof Long || arg instanceof Double) op = LDC2_W;
                 // fall through
-            default:
-                if(OP_CPENT(op) && !(arg instanceof CPGen.Ent)) arg = cp.add(arg);
+            default: {
+                int opdata = OP_DATA[op&0xff];
+                if((opdata&OP_CPENT_FLAG) != 0 && !(arg instanceof CPGen.Ent))
+                    arg = cp.add(arg);
+                else if((opdata&OP_VALID_FLAG) == 0)
+                    throw new IllegalArgumentException("unknown bytecode");
                 break;
+            }
         }
-        _set(pos,op,arg);
-    }
-    
-    private final  void _set(int pos, byte op, Object arg) {
-        if(capacity == -1) throw new IllegalStateException("method can't have code");
-        if(size == -1) throw new IllegalStateException("method is finalized");
-        if(!OP_VALID(op)) throw new IllegalArgumentException("unknown bytecode");
-        
         this.op[pos] = op;
         this.arg[pos] = arg;
     }
@@ -261,10 +269,11 @@ public class MethodGen implements CGConst {
         // Pass1 - Calculate maximum pc of each bytecode, widen some insns, resolve any unresolved jumps, etc
         for(i=0,p=0;i<size;i++) {
             byte op = this.op[i];
+            int opdata = OP_DATA[op&0xff];
             int j;
             maxpc[i] = p;
             
-            if(OP_BRANCH(op)) { 
+            if((opdata & OP_BRANCH_FLAG)!= 0) { 
                 try { 
                     arg[i] = resolveTarget(arg[i]);
                 } catch(RuntimeException e) {
@@ -297,7 +306,7 @@ public class MethodGen implements CGConst {
                     if(j >= 256) this.op[i] = op = LDC_W;
                     // fall through
                 default:
-                    if((j = OP_ARG_SIZE(op)) == -1) throw new Error("shouldn't be here");
+                    if((j = (opdata&OP_ARG_LENGTH_MASK)) == 7) throw new Error("shouldn't be here");
                     p += 1 + j;
                     break;
             }
@@ -336,8 +345,8 @@ public class MethodGen implements CGConst {
                     break;
                 }
                 default: {
-                    int l = OP_ARG_SIZE(op);
-                    if(l == -1) throw new Error("shouldn't be here");
+                    int l = OP_DATA[op&0xff] & OP_ARG_LENGTH_MASK;
+                    if(l == 7) throw new Error("shouldn't be here");
                     p += 1 + l;                    
                 }
             }
@@ -352,17 +361,16 @@ public class MethodGen implements CGConst {
         // Pass 4 - Actually write the bytecodes
         for(i=0;i<size;i++) {
             byte op = this.op[i];
+            int opdata = OP_DATA[op&0xff];
             if(op == NOP && !EMIT_NOPS) continue;
             
             o.writeByte(op&0xff);
-            int argLength = OP_ARG_SIZE(op);
+            int argLength = opdata & OP_ARG_LENGTH_MASK;
             
             if(argLength == 0) continue; // skip if no args
             
             // Write args
             Object arg = this.arg[i];  
-            boolean wasInt = arg instanceof Integer;
-            int iarg = wasInt ? ((Integer)arg).intValue() : -1;
             
             switch(op) {
                 case IINC: {
@@ -394,11 +402,11 @@ public class MethodGen implements CGConst {
                 }
                     
                 default:
-                    if(OP_BRANCH(op)) {
-                        int v = pc[iarg] - pc[i];
+                    if((opdata & OP_BRANCH_FLAG) != 0) {
+                        int v = pc[((Integer)arg).intValue()] - pc[i];
                         if(v < -32768 || v > 32767) throw new ClassGen.Exn("overflow of s2 offset");
                         o.writeShort(v);
-                    } else if(OP_CPENT(op)) {
+                    } else if((opdata & OP_CPENT_FLAG) != 0) {
                         int v = ((CPGen.Ent)arg).getIndex();
                         if(argLength == 1) o.writeByte(v);
                         else if(argLength == 2) o.writeShort(v);
@@ -406,7 +414,7 @@ public class MethodGen implements CGConst {
                     } else if(argLength == -1) {
                         throw new Error("should never happen - variable length instruction not explicitly handled");
                     } else {
-                        if(!wasInt) throw new IllegalStateException("Invalid argument given for " + Integer.toHexString(op&0xff));
+                        int iarg  = ((Integer)arg).intValue();
                         if(argLength == 1) {
                             if(iarg < -128 || iarg >= 256) throw new ClassGen.Exn("overflow of s/u1 option");
                             o.writeByte(iarg);
@@ -421,7 +429,7 @@ public class MethodGen implements CGConst {
             }
         }
 
-        if(baos.size() - 8 != codeSize) throw new Error("we didn't output what we were supposed to");
+        //if(baos.size() - 8 != codeSize) throw new Error("we didn't output what we were supposed to");
         
         o.writeShort(exnTable.size());
         for(Enumeration e = exnTable.keys();e.hasMoreElements();)
@@ -486,28 +494,32 @@ public class MethodGen implements CGConst {
     private static Double N(double d) { return new Double(d); }
     private static int max(int a, int b) { return a > b ? a : b; }
     
-    private static final boolean OP_VALID(byte op) { return (OP_DATA[op&0xff] & 1) != 0; }
-    private static final int OP_ARG_SIZE(byte op) { int n = ((OP_DATA[op&0xff]>>1)&3); return n == 7 ? -1 : n; }
-    private static final boolean OP_CPENT(byte op) { return (OP_DATA[op&0xff]&(1<<4)) != 0; }
-    private static final boolean OP_BRANCH(byte op) { return (OP_DATA[op&0xff]&(1<<5)) != 0; }
+    private static final int OP_BRANCH_FLAG = 1<<3;
+    private static final int OP_CPENT_FLAG = 1<<4;
+    private static final int OP_VALID_FLAG = 1<<5;
+    private static final int OP_ARG_LENGTH_MASK = 7;
+    private static final boolean OP_VALID(byte op) { return (OP_DATA[op&0xff] & OP_VALID_FLAG) != 0; }
+    private static final int OP_ARG_LENGTH(byte op) { return (OP_DATA[op&0xff]&OP_ARG_LENGTH_MASK); }
+    private static final boolean OP_CPENT(byte op) { return (OP_DATA[op&0xff]&OP_CPENT_FLAG) != 0; }
+    private static final boolean OP_BRANCH(byte op) { return (OP_DATA[op&0xff]&OP_BRANCH_FLAG ) != 0; }
     
     // Run perl -x src/org/ibex/classgen/CGConst.java to generate this
     private static final byte[] OP_DATA = {
+            0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+            0x21, 0x22, 0x31, 0x32, 0x32, 0x21, 0x21, 0x21, 0x21, 0x21, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+            0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+            0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x21, 0x21, 0x21, 0x21, 0x21, 0x20, 0x20, 0x20, 0x20, 0x20,
+            0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+            0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+            0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+            0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+            0x20, 0x20, 0x20, 0x20, 0x22, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+            0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a,
+            0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x2a, 0x21, 0x27, 0x27, 0x20, 0x20, 0x20, 0x20,
+            0x20, 0x20, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x01, 0x32, 0x21, 0x32, 0x20, 0x20,
+            0x32, 0x32, 0x20, 0x20, 0x27, 0x23, 0x2a, 0x2a, 0x2c, 0x2c, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
             0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-            0x03, 0x05, 0x13, 0x15, 0x15, 0x03, 0x03, 0x03, 0x03, 0x03, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
             0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-            0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x03, 0x03, 0x03, 0x03, 0x03, 0x01, 0x01, 0x01, 0x01, 0x01,
-            0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-            0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-            0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-            0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-            0x01, 0x01, 0x01, 0x01, 0x05, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-            0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x25, 0x25, 0x25, 0x25, 0x25, 0x25, 0x25,
-            0x25, 0x25, 0x25, 0x25, 0x25, 0x25, 0x25, 0x25, 0x25, 0x03, 0x0f, 0x0f, 0x01, 0x01, 0x01, 0x01,
-            0x01, 0x01, 0x15, 0x15, 0x15, 0x15, 0x15, 0x15, 0x15, 0x15, 0x02, 0x15, 0x03, 0x15, 0x01, 0x01,
-            0x15, 0x15, 0x01, 0x01, 0x0f, 0x07, 0x25, 0x25, 0x29, 0x29, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02,
-            0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02,
-            0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02,
-            0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02
+            0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01
     };
 }

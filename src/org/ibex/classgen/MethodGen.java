@@ -434,7 +434,7 @@ public class MethodGen implements CGConst {
                             if(iarg < -128 || iarg >= 256) throw new ClassGen.Exn("overflow of s/u1 option");
                             o.writeByte(iarg);
                         } else if(argLength == 2) {
-                            if(iarg < -32767 || iarg >= 65536) throw new ClassGen.Exn("overflow of s/u2 option"); 
+                            if(iarg < -32768 || iarg >= 65536) throw new ClassGen.Exn("overflow of s/u2 option"); 
                             o.writeShort(iarg);
                         } else {
                             throw new Error("should never happen");

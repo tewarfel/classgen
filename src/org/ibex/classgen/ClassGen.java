@@ -3,23 +3,30 @@ package org.ibex.classgen;
 import java.util.*;
 import java.io.*;
 
+/** Class generation object representing the whole classfile */
 public class ClassGen implements CGConst {
-    private Type.Object thisType;
-    private Type.Object superType;
-    int flags;
-    private String sourceFile; 
+    private final Type.Object thisType;
+    private final Type.Object superType;
+    final int flags;
     
-    private Vector interfaces = new Vector();
-    private Vector fields = new Vector();
-    private Vector methods = new Vector();
+    private String sourceFile; 
+    private final Vector interfaces = new Vector();
+    private final Vector fields = new Vector();
+    private final Vector methods = new Vector();
     
     final CPGen cp;
     private final AttrGen attributes;
     
+    /** @see #ClassGen(Type.Object,Type.Object,int) */
     public ClassGen(String name, String superName, int flags) {
         this(new Type.Object(name),new Type.Object(superName),flags);
     }
     
+    /** Creates a new ClassGen object 
+        @param thisType The type of the class to generate
+        @param superType The superclas of the generated class (commonly Type.OBJECT) 
+        @param flags The access flags for this class (ACC_PUBLIC, ACC_FINAL, ACC_SUPER, ACC_INTERFACE, and ACC_ABSTRACT)
+    */
     public ClassGen(Type.Object thisType,Type.Object superType, int flags) {
         if((flags & ~(ACC_PUBLIC|ACC_FINAL|ACC_SUPER|ACC_INTERFACE|ACC_ABSTRACT)) != 0)
             throw new IllegalArgumentException("invalid flags");
@@ -31,21 +38,53 @@ public class ClassGen implements CGConst {
         attributes = new AttrGen(cp);
     }
     
+    /** Adds a new method to this class 
+        @param name The name of the method (not the signature, just the name)
+        @param ret The return type of the method
+        @param args The arguments to the method
+        @param flags The flags for the method
+                     (ACC_PUBLIC, ACC_PRIVATE, ACC_PROTECTED, ACC_STATIC, ACC_SYNCHRONIZED, ACC_NATIVE, ACC_ABSTRACT, ACC_STRICT)
+        @return A new MethodGen object for the method
+        @exception IllegalArgumentException if illegal flags are specified
+        @see MethodGen
+        @see CGConst
+    */
     public final MethodGen addMethod(String name, Type ret, Type[] args, int flags) {
         MethodGen mg = new MethodGen(this,name,ret,args,flags);
         methods.addElement(mg);
         return mg;
     }
     
+    /** Adds a new field to this class 
+        @param name The name of the filed (not the signature, just the name)
+        @param type The type of the field
+        @param flags The flags for the field
+        (ACC_PUBLIC, ACC_PRIVATE, ACC_PROTECTED, ACC_STATIC, ACC_FINAL, ACC_VOLATILE, ACC_TRANSIENT)
+        @return A new FieldGen object for the method
+        @exception IllegalArgumentException if illegal flags are specified
+        @see FieldGen
+        @see CGConst
+        */  
     public final FieldGen addField(String name, Type type, int flags) {
         FieldGen fg = new FieldGen(this,name,type,flags);
         fields.addElement(fg);
         return fg;
     }
     
+    /** Sets the source value of the SourceFile attribute of this class 
+        @param sourceFile The string to be uses as the SourceFile of this class
+    */
     public void setSourceFile(String sourceFile) { this.sourceFile = sourceFile; }
     
-    public void dump(String s) throws IOException { dump(new File(s)); }
+    /** Writes the classfile data to the file specifed
+        @see ClassGen#dump(OutputStream)
+    */
+    public void dump(String file) throws IOException { dump(new File(file)); }
+    
+    /** Writes the classfile data to the file specified
+        If <i>f</i> is a directory directory components under it are created for the package the class is in (like javac's -d option)
+        @see ClassGen#dump(OutputStream)
+    */
     public void dump(File f) throws IOException {
         if(f.isDirectory()) {
             String[] a = thisType.components();
@@ -58,7 +97,13 @@ public class ClassGen implements CGConst {
         }
         dump(new FileOutputStream(f));
     }
-    
+   
+    /** Writes the classfile data to the outputstream specified
+        @param os The stream to write the class to
+        @exception IOException if an IOException occures while writing the class data
+        @exception IllegalStateException if the data for a method is in an inconsistent state (required arguments missing, etc)
+        @exception Exn if the classfile could not be written for any other reason (constant pool full, etc)
+    */
     public void dump(OutputStream os) throws IOException {
         DataOutputStream dos = new DataOutputStream(new BufferedOutputStream(os));
         _dump(dos);
@@ -102,10 +147,18 @@ public class ClassGen implements CGConst {
         attributes.dump(o); // attributes        
     }
     
+    /** Thrown when class generation fails for a reason not under the control of the user
+        (IllegalStateExceptions are thrown in those cases */
     public static class Exn extends RuntimeException {
         public Exn(String s) { super(s); }
     }
     
+    /** A class representing a field or method reference. This is used as an argument to the INVOKE*, GET*, and PUT* bytecodes
+        @see MethodRef
+        @see FieldRef
+        @see MethodRef.I
+        @see FieldRef
+    */
     public static abstract class FieldOrMethodRef {
         Type.Object klass;
         String name;

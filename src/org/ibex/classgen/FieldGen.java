@@ -2,6 +2,8 @@ package org.ibex.classgen;
 
 import java.io.*;
 
+/** Class representing a field in a generated classfile
+    @see ClassGen#addField */
 public class FieldGen implements CGConst {
     private final CPGen cp;
     private final String name;

@@ -3,6 +3,10 @@ package org.ibex.classgen;
 import java.io.*;
 import java.util.*;
 
+// FEATURE: Support WIDE bytecodes
+
+/** A class representing a method in a generated classfile
+    @see ClassGen#addMethod */
 public class MethodGen implements CGConst {
     private final static boolean EMIT_NOPS = false;
     
@@ -47,6 +51,7 @@ public class MethodGen implements CGConst {
         maxLocals = Math.max(args.length + (flags&ACC_STATIC)==0 ? 1 : 0,4);
     }
     
+    /** Returns the descriptor string for this method */
     public String getDescriptor() { return MethodRef.getDescriptor(ret,args); }
     
     private class ExnTableEnt {
@@ -68,10 +73,20 @@ public class MethodGen implements CGConst {
         }
     }
     
-    public final void addExceptionHandler(int startPC, int endPC, int handlerPC, Type.Object type) {
-        exnTable.put(type, new ExnTableEnt(startPC,endPC,handlerPC,cp.add(type)));
+    /** Adds an exception handler for the range [<i>start</i>,<i>end</i>) pointing to <i>handler</i>
+        @param start The instruction to start at (inclusive)
+        @param end The instruction to end at (exclusive)
+        @param handler The instruction of the excepton handler
+        @param type The type of exception that is to be handled (MUST inherit from Throwable)
+    */
+    public final void addExceptionHandler(int start, int end, int handler, Type.Object type) {
+        exnTable.put(type, new ExnTableEnt(start,end,handler,cp.add(type)));
     }
     
+    /** Adds a exception type that can be thrown from this method
+        NOTE: This isn't enforced by the JVM. This is for reference only. A method can throw exceptions not declared to be thrown 
+        @param type The type of exception that can be thrown 
+    */
     public final void addThrow(Type.Object type) {
         thrownExceptions.put(type,cp.add(type));
     }
@@ -93,9 +108,14 @@ public class MethodGen implements CGConst {
         
         capacity = newCap;
     }
+    
+    /** Returns the size (in instructions) of this method 
+        @return The size of the method (in instructions)
+    */
     public final int size() { return size; }
     
     // These two are optimized for speed, they don't call set() below
+    /** Add a bytecode (with no argument) to the method */
     public final int add(byte op) {
         int s = size;
         if(s == capacity) grow();
@@ -103,22 +123,57 @@ public class MethodGen implements CGConst {
         size++;
         return s;
     }
+    /** Set the bytecode at position <i>pos</i> to <i>op</i> */
     public final void set(int pos, byte op) { this.op[pos] = op; }
         
+    /** Adds a bytecode, <i>op</i>, with argument <i>arg</i> to the method 
+        @return The position of the new bytecode
+        */
     public final int add(byte op, Object arg) { if(capacity == size) grow(); set(size,op,arg); return size++; }
+    /** Adds a bytecode with a boolean argument - equivalent to add(op,arg?1:0);
+        @return The position of the new bytecode
+        @see #add(byte,int)
+    */
     public final int add(byte op, boolean arg) { if(capacity == size) grow(); set(size,op,arg); return size++; }
+    /** Adds a bytecode with an integer argument. This is equivalent to add(op,new Integer(arg)), but optimized to prevent the allocation when possible
+        @return The position of the new bytecode
+        @see #add(byte,Object)
+    */
     public final int add(byte op, int arg) { if(capacity == size) grow(); set(size,op,arg); return size++; }
     
+    /** Gets the bytecode at position <i>pos</i>
+        @exception ArrayIndexOutOfBoundException if pos < 0 || pos >= size()
+    */
     public final byte get(int pos) { return op[pos]; }
+    
+    /** Gets the bytecode at position <i>pos</i>. NOTE: This isn't necessarily the same object that was set with add or set.
+        Arguments for instructions which access the constant pool (LDC, INVOKEVIRTUAL, etc) are converted to a more efficient
+        interal form when they are added. The value returned from this method for these instruction can be reused, but there
+        is no way to retrieve the original object 
+        @exception ArrayIndexOutOfBoundException if pos < 0 || pos >= size()
+    */    
     public final Object getArg(int pos) { return arg[pos]; }
     
+    /** Sets the argument for <i>pos</i> to <i>arg</i>. This is equivalent to set(pos,op,new Integer(arg)), but optimized to prevent the allocation when possible.
+        @exception ArrayIndexOutOfBoundException if pos < 0 || pos >= size()
+        @see #setArg(int,Object) */
     public final void setArg(int pos, int arg) { set(pos,op[pos],N(arg)); }
+    /** Sets the argument for <i>pos</i> to <i>arg</i>.
+        @exception ArrayIndexOutOfBoundException if pos < 0 || pos >= size()
+    */
     public final void setArg(int pos, Object arg) { set(pos,op[pos],arg); }
     
-    
-    public final void set(int pos, byte op, boolean b) { set(pos,op,b?1:0); }
+    /** Sets the bytecode and argument  at <i>pos</i> to <i>op</i> and <i>arg</i> respectivly. 
+        This is equivalent to set(pos,op,arg?1:0) 
+        @exception ArrayIndexOutOfBoundException if pos < 0 || pos >= size()
+    */
+    public final void set(int pos, byte op, boolean arg) { set(pos,op,arg?1:0); }
     
     // This MUST handle x{LOAD,STORE} and LDC with an int arg WITHOUT falling back to set(int,byte,Object)
+    /** Sets the bytecode and argument  at <i>pos</i> to <i>op</i> and <i>n</i> respectivly.
+        This is equivalent to set(pos,op, new Integer(n)), but optimized to prevent the allocation when possible.
+        @exception ArrayIndexOutOfBoundException if pos < 0 || pos >= size()
+    */
     public final void set(int pos, byte op, int n) {
         Object arg = null;
         OUTER: switch(op) {
@@ -166,6 +221,9 @@ public class MethodGen implements CGConst {
         this.arg[pos] = arg;
     }
     
+    /** Sets the bytecode and argument  at <i>pos</i> to <i>op</i> and <i>arg</i> respectivly.
+        @exception ArrayIndexOutOfBoundException if pos < 0 || pos >= size()
+        */
     public final void set(int pos, byte op, Object arg) {
         switch(op) {
             case ILOAD: case ISTORE: case LLOAD: case LSTORE: case FLOAD:
@@ -199,6 +257,10 @@ public class MethodGen implements CGConst {
         this.arg[pos] = arg;
     }
     
+    /** This class represents the arguments to the TABLESWITH and LOOKUPSWITCH bytecodes
+        @see MethodGen.TSI
+        @see MethodGen.LSI
+    */
     public static class SI {
         public final Object[] targets;
         public Object defaultTarget;
@@ -214,6 +276,7 @@ public class MethodGen implements CGConst {
         public int getDefaultTarget() { return ((Integer)defaultTarget).intValue(); }        
     }
     
+    /** This class represents the arguments to the TABLESWITCH bytecode */
     public static class TSI extends SI {
         public final int lo;
         public final int hi;
@@ -226,6 +289,7 @@ public class MethodGen implements CGConst {
         public void setTargetForVal(int val, int n) { setTarget(val-lo,n); }
     }
     
+    /** This class represents the arguments to the LOOKUPSWITCH bytecode */
     public static class LSI extends SI {
         public final int[] vals;
         public LSI(int size) {
@@ -235,15 +299,23 @@ public class MethodGen implements CGConst {
         public final void setVal(int pos, int val) { vals[pos] = val; }
     }
     
+    /** This class represents the arguments to byecodes that take two integer arguments. */
     public static class Pair {
         public int i1;
         public int i2;
         public Pair(int i1, int i2) { this.i1 = i1; this.i2 = i2; }
     }
         
+    /** Sets the maximum number of locals in the function to <i>maxLocals</i>. NOTE: This defaults to 0 and is automatically increased as
+        necessary when *LOAD/*STORE bytecodes are added. You do not need to call this function in most cases */
     public void setMaxLocals(int maxLocals) { this.maxLocals = maxLocals; }
+    /** Sets the maxinum size of th stack for this function  to <i>maxStack</i>. This defaults to 16< */
     public void setMaxStack(int maxStack) { this.maxStack = maxStack; }
     
+    /** Computes the final bytecode for this method. 
+        @exception IllegalStateException if the data for a method is in an inconsistent state (required arguments missing, etc)
+        @exception Exn if the byteocode could not be generated for any other reason (constant pool full, etc)
+    */
     public void finish() {
         try {
             _finish();
@@ -479,7 +551,7 @@ public class MethodGen implements CGConst {
         size = capacity = FINISHED;        
     }
         
-    public void dump(DataOutput o) throws IOException {
+    void dump(DataOutput o) throws IOException {
         o.writeShort(flags);
         o.writeShort(cp.getUtf8Index(name));
         o.writeShort(cp.getUtf8Index(getDescriptor()));
@@ -487,6 +559,8 @@ public class MethodGen implements CGConst {
         attrs.dump(o);
     }
     
+    /** Negates the IF* instruction, <i>op</i>  (IF_ICMPGT -> IF_ICMPLE, IFNE -> IFEQ,  etc)
+        @exception IllegalArgumentException if <i>op</i> isn't an IF* instruction */
     public static byte negate(byte op) {
         switch(op) {
             case IFEQ: return IFNE;
@@ -509,6 +583,8 @@ public class MethodGen implements CGConst {
         }
     }
     
+    /** Class that represents a target that isn't currently know. The target MUST be set with setTarget() before the classfile is written. 
+        This class is more or less a mutable integer */
     public static class PhantomTarget {
         private int target = -1;
         public void setTarget(int target) { this.target = target; }

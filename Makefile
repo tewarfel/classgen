@@ -15,6 +15,13 @@ test: $(classes)
 clean: 
 	rm -rf build/*
 
+.PHONY: doc
+doc: doc/index.html
+
+doc/index.html: $(sources) src/org/ibex/classgen/package.html
+	mkdir -p doc
+	javadoc -d doc $(sources)
+
 sizecheck:
 	@for c in $(jar_classes); do \
 		for f in `echo $$c|sed 's,\.class$$,,;'`*.class; do gzip -c $$f; done | wc -c | tr -d '\n'; \

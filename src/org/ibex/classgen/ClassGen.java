@@ -101,7 +101,9 @@ public class ClassGen implements CGConst {
             }
             f = new File(f,a[i] + ".class");
         }
-        dump(new FileOutputStream(f));
+        OutputStream os = new FileOutputStream(f);
+        dump(os);
+        os.close();
     }
    
     /** Writes the classfile data to the outputstream specified
@@ -134,7 +136,6 @@ public class ClassGen implements CGConst {
         o.writeShort(3); // minor_version
         o.writeShort(45); // major_version
         
-        o.writeShort(cp.slots()); // constant_pool_count
         cp.dump(o); // constant_pool
         
         o.writeShort(flags);
@@ -154,10 +155,33 @@ public class ClassGen implements CGConst {
         attributes.dump(o); // attributes        
     }
     
+    public ClassGen read(File f) throws ClassReadExn {
+        InputStream is = new FileInputStream(f);
+        ClassGen ret = read(is);
+        is.close();
+        return ret;
+    }
+    
+    public ClassGen read(InputStream is) throws ClassReadExn {
+        return new ClassGen(new DataInputStream(new BufferedInputStream(is)));
+    }
+
+    ClassGen(DataInput i) throws ClassReadExn {
+        if(i.readInt() != 0xcadebabe) throw new ClassReadExn("invalid magic");
+        short minor = i.readInt();
+        if(minor != 3) throw new ClassReadExn("invalid minor version: " + minor);
+        if(i.readInt() != 45) throw new ClassReadExn("invalid major version");
+        cp = new CPGen(i);
+    }
+    
     /** Thrown when class generation fails for a reason not under the control of the user
         (IllegalStateExceptions are thrown in those cases */
     public static class Exn extends RuntimeException {
         public Exn(String s) { super(s); }
+    }
+    
+    public static class ClassReadExn extends IOException {
+        public ClassReadExn(String s) { super(s); }
     }
     
     /** A class representing a field or method reference. This is used as an argument to the INVOKE*, GET*, and PUT* bytecodes

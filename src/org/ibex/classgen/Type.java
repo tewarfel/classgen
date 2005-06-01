@@ -27,6 +27,20 @@ public class Type {
     
     Type(String descriptor) { this.descriptor = descriptor; }
     
+    public static Type fromDescriptor(String descriptor) {
+        if(descriptor.equals("V")) return VOID;
+        if(descriptor.equals("I")) return INT;
+        if(descriptor.equals("J")) return LONG;
+        if(descriptor.equals("Z")) return BOOLEAN;
+        if(descriptor.equals("D")) return DOUBLE;
+        if(descriptor.equals("F")) return FLOAT;
+        if(descriptor.equals("B")) return BYTE;
+        if(descriptor.equals("C")) return CHAR;
+        if(descriptor.equals("S")) return SHORT;
+        if(Type.Object.validDescriptorString(descriptor)) return new Type.Object(descriptor);
+        return null;
+    }
+        
     /** Returns the Java descriptor string for this object ("I", or "Ljava/lang/String", "[[J", etc */
     public final String getDescriptor() { return descriptor; }
     public int hashCode() { return descriptor.hashCode(); }
@@ -71,7 +85,6 @@ public class Type {
         
         String internalForm() { return descriptor.substring(1,descriptor.length()-1); }
         
-        // FEATURE: Do a proper check here (invalid chars, etc)
         static boolean validDescriptorString(String s) {
             return s.startsWith("L") && s.endsWith(";");
         }

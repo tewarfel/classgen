@@ -29,6 +29,7 @@ public class MethodGen implements CGConst {
     private byte[] op;
     private Object[] arg;
     
+    MethodGen(DataInput in) { throw new Error("Brian is lame"); }
     MethodGen(ClassGen owner, String name, Type ret, Type[] args, int flags) {
         if((flags & ~(ACC_PUBLIC|ACC_PRIVATE|ACC_PROTECTED|ACC_STATIC|ACC_FINAL|ACC_SYNCHRONIZED|ACC_NATIVE|ACC_ABSTRACT|ACC_STRICT)) != 0)
             throw new IllegalArgumentException("invalid flags");

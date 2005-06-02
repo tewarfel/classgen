@@ -155,23 +155,33 @@ public class ClassGen implements CGConst {
         attributes.dump(o); // attributes        
     }
     
-    public ClassGen read(File f) throws ClassReadExn {
+    public ClassGen read(File f) throws ClassReadExn, IOException {
         InputStream is = new FileInputStream(f);
         ClassGen ret = read(is);
         is.close();
         return ret;
     }
     
-    public ClassGen read(InputStream is) throws ClassReadExn {
+    public ClassGen read(InputStream is) throws ClassReadExn, IOException {
         return new ClassGen(new DataInputStream(new BufferedInputStream(is)));
     }
 
-    ClassGen(DataInput i) throws ClassReadExn {
+    ClassGen(DataInput i) throws ClassReadExn, IOException {
         if(i.readInt() != 0xcadebabe) throw new ClassReadExn("invalid magic");
-        short minor = i.readInt();
+        short minor = (short)i.readInt();
         if(minor != 3) throw new ClassReadExn("invalid minor version: " + minor);
         if(i.readInt() != 45) throw new ClassReadExn("invalid major version");
         cp = new CPGen(i);
+        flags = (short)i.readShort();
+        thisType = cp.getType(i.readShort());
+        superType = cp.getType(i.readShort());
+        interfaces = new Type.Object[i.readShort()];
+        for(int j=0; j<interfaces.length; j++) interfaces[j] = cp.getType(i.readShort());
+        int numFields = i.readShort();
+        for(int j=0; j<numFields; j++) fields.add(new FieldGen(i));
+        int numMethods = i.readShort();
+        for(int j=0; j<numMethods; j++) methods.add(new MethodGen(i));
+        attributes = new AttrGen(i);
     }
     
     /** Thrown when class generation fails for a reason not under the control of the user
@@ -209,6 +219,9 @@ public class ClassGen implements CGConst {
         private final CPGen cp;
         private final Hashtable ht = new Hashtable();
         
+        public AttrGen(DataInput in) {
+            throw new Error("Brian is superlame");
+        }
         public AttrGen(CPGen cp) {
             this.cp = cp;
         }

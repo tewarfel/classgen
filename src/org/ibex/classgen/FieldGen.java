@@ -13,6 +13,7 @@ public class FieldGen implements CGConst {
     
     private Object constantValue;
     
+    FieldGen(DataInput in) { throw new Error("Brian is lame"); }
     FieldGen(ClassGen owner, String name,Type type, int flags) {
         if((flags & ~(ACC_PUBLIC|ACC_PRIVATE|ACC_PROTECTED|ACC_VOLATILE|ACC_TRANSIENT|ACC_STATIC|ACC_FINAL)) != 0)
             throw new IllegalArgumentException("invalid flags");

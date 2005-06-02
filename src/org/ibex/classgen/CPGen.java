@@ -24,6 +24,7 @@ class CPGen {
         CPGen owner; // don't need this yet, but we will to implement ref() and unref()
         int n; // this is the refcount if state == OPEN, index if >= STABLE
         int tag;
+        Ent e0;
         
         Ent(CPGen owner, int tag) { this.owner = owner; this.tag = tag; }
         
@@ -84,19 +85,23 @@ class CPGen {
             if(e2 != null) o.writeShort(e2.n);
         }
         
+        private String fixme() { throw new Error("fixme"); }
         Object key() throws ClassGen.ClassReadExn {
             switch(tag) {
                 case 7: return new Type.Object(((Utf8Ent)e0).s);
                 case 8: return (((Utf8Ent)e1).s);
-                case 9:
+                case 9: {
                     NameAndTypeKey nt = (NameAndTypeKey) e2.key();
                     Type t = Type.fromDescriptor(nt.type);
                     if(t == null) throw new ClassGen.ClassReadExn("invalid type descriptor");
-                    return FieldRef((Type.Object)e1.key(), nt.name, t);
-                case 10:
+                    return new FieldRef((Type.Object)e1.key(), nt.name, t);
+                }
+                case 10: {
                     NameAndTypeKey nt = (NameAndTypeKey) e2.key();
-                    return MethodRef((Type.Object)e1.key(),throw new Error("fixme"));
+                    return new MethodRef((Type.Object)e1.key(), fixme(), null, null);
+                }
             }
+            throw new Error("FIXME");
         }
     }
         
@@ -105,6 +110,7 @@ class CPGen {
         Utf8Ent(CPGen owner) { super(owner,1); }
         String debugToString() { return s; }
         void dump(DataOutput o) throws IOException { super.dump(o); o.writeUTF(s); }
+        Object key() { throw new Error("Brian is lame"); }
     }
     
     /*
@@ -149,6 +155,8 @@ class CPGen {
         if(state < STABLE) throw new IllegalStateException("constant pool is not stable");
         return ent.n;
     }
+
+    public final Type.Object getType(int index) { return new Type.Object(((Utf8Ent)getByIndex(index)).s); }
 
     public final Ent getByIndex(int index) {
         if(state < STABLE) throw new IllegalStateException("constant pool is not stable");
@@ -299,18 +307,19 @@ class CPGen {
         }
     }
     
-    CPGen(DataInput in) throws ClassGen.ClassReadExn {
-        usedSlots = i.readUnsignedShort();
+    CPGen(DataInput in) throws ClassGen.ClassReadExn, IOException {
+        usedSlots = in.readUnsignedShort();
         if(usedSlots==0) throw new ClassGen.ClassReadExn("invalid used slots");
         
         // these are to remember the CPRefEnt e0 and e1s we have to fix up
+        int[] e0s = new int[usedSlots];
         int[] e1s = new int[usedSlots];
         int[] e2s = new int[usedSlots];
         
         entriesByIndex = new Ent[usedSlots];
         
         for(int index=1;index<usedSlots;index++) {
-            byte tag = i.readByte();
+            byte tag = in.readByte();
             Ent e;
             switch(tag) {
                 case 7: // Object Type
@@ -321,8 +330,8 @@ class CPGen {
                 case 12: // NameAndType
                 {
                     e = new CPRefEnt(this,tag);
-                    e1s[index] = i.readUnsignedShort();;
-                    if(tag != 7 && tag != 8) e2s[index] = i.readUnsignedShort();
+                    e1s[index] = in.readUnsignedShort();;
+                    if(tag != 7 && tag != 8) e2s[index] = in.readUnsignedShort();
                     break;
                 }
                 case 3: // Integer
@@ -330,7 +339,7 @@ class CPGen {
                 {
                     IntEnt ie;
                     e = ie = new IntEnt(this,tag);
-                    ie.i = i.readInt();
+                    ie.i = in.readInt();
                     break;
                 }
                 case 5: // Long
@@ -338,7 +347,7 @@ class CPGen {
                 {
                     LongEnt le;
                     e = le = new LongEnt(this,tag);
-                    le.l = i.readLong();
+                    le.l = in.readLong();
                     index++;
                     break;
                 }
@@ -346,7 +355,7 @@ class CPGen {
                 {
                     Utf8Ent ue;
                     e = ue = new Utf8Ent(this);
-                    ue.s = i.readUTF();
+                    ue.s = in.readUTF();
                     break;
                 }
                 default:
@@ -356,6 +365,7 @@ class CPGen {
         }
         
         for(int index=1;index<usedSlots;index++) {
+            int i = index;
             Ent e = entriesByIndex[index];
             if(e == null) throw new Error("should never happen");
             if(e instanceof CPRefEnt) {

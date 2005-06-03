@@ -47,11 +47,11 @@ public class MethodGen implements CGConst {
         
         if((owner.flags & ACC_INTERFACE) != 0 || (flags & (ACC_ABSTRACT|ACC_NATIVE)) != 0) size = capacity = -1;
         
-        maxLocals = Math.max(args.length + (flags&ACC_STATIC)==0 ? 1 : 0,4);
+        maxLocals = Math.max(args.length + (flags&ACC_STATIC)==0 ? 1 : 0, 4);
     }
     
     /** Returns the descriptor string for this method */
-    public String getDescriptor() { return MethodRef.getDescriptor(ret,args); }
+    public String getDescriptor() { return MethodRef.getDescriptor(ret, args); }
     
     private class ExnTableEnt {
         public int start;
@@ -72,14 +72,14 @@ public class MethodGen implements CGConst {
         }
     }
     
-    /** Adds an exception handler for the range [<i>start</i>,<i>end</i>) pointing to <i>handler</i>
+    /** Adds an exception handler for the range [<i>start</i>, <i>end</i>) pointing to <i>handler</i>
         @param start The instruction to start at (inclusive)
         @param end The instruction to end at (exclusive)
         @param handler The instruction of the excepton handler
         @param type The type of exception that is to be handled (MUST inherit from Throwable)
     */
     public final void addExceptionHandler(int start, int end, int handler, Type.Object type) {
-        exnTable.put(type, new ExnTableEnt(start,end,handler,cp.add(type)));
+        exnTable.put(type, new ExnTableEnt(start, end, handler, cp.add(type)));
     }
     
     /** Adds a exception type that can be thrown from this method
@@ -87,7 +87,7 @@ public class MethodGen implements CGConst {
         @param type The type of exception that can be thrown 
     */
     public final void addThrow(Type.Object type) {
-        thrownExceptions.put(type,cp.add(type));
+        thrownExceptions.put(type, cp.add(type));
     }
     
     private final void grow() { if(size == capacity) grow(size+1); }
@@ -95,14 +95,14 @@ public class MethodGen implements CGConst {
         if(capacity == NO_CODE) throw new IllegalStateException("method can't have code");
         if(capacity == FINISHED) throw new IllegalStateException("method has been finished");
         if(newCap <= capacity) return;
-        newCap = Math.max(newCap,capacity == 0 ? 256 : capacity*2);
+        newCap = Math.max(newCap, capacity == 0 ? 256 : capacity*2);
         
         byte[] op2 = new byte[newCap];
-        if(capacity != 0) System.arraycopy(op,0,op2,0,size);
+        if(capacity != 0) System.arraycopy(op, 0, op2, 0, size);
         op = op2;
         
         Object[] arg2 = new Object[newCap];
-        if(capacity != 0) System.arraycopy(arg,0,arg2,0,size);
+        if(capacity != 0) System.arraycopy(arg, 0, arg2, 0, size);
         arg = arg2;
         
         capacity = newCap;
@@ -128,17 +128,17 @@ public class MethodGen implements CGConst {
     /** Adds a bytecode, <i>op</i>, with argument <i>arg</i> to the method 
         @return The position of the new bytecode
         */
-    public final int add(byte op, Object arg) { if(capacity == size) grow(); set(size,op,arg); return size++; }
-    /** Adds a bytecode with a boolean argument - equivalent to add(op,arg?1:0);
+    public final int add(byte op, Object arg) { if(capacity == size) grow(); set(size, op, arg); return size++; }
+    /** Adds a bytecode with a boolean argument - equivalent to add(op, arg?1:0);
         @return The position of the new bytecode
-        @see #add(byte,int)
+        @see #add(byte, int)
     */
-    public final int add(byte op, boolean arg) { if(capacity == size) grow(); set(size,op,arg); return size++; }
-    /** Adds a bytecode with an integer argument. This is equivalent to add(op,new Integer(arg)), but optimized to prevent the allocation when possible
+    public final int add(byte op, boolean arg) { if(capacity == size) grow(); set(size, op, arg); return size++; }
+    /** Adds a bytecode with an integer argument. This is equivalent to add(op, new Integer(arg)), but optimized to prevent the allocation when possible
         @return The position of the new bytecode
-        @see #add(byte,Object)
+        @see #add(byte, Object)
     */
-    public final int add(byte op, int arg) { if(capacity == size) grow(); set(size,op,arg); return size++; }
+    public final int add(byte op, int arg) { if(capacity == size) grow(); set(size, op, arg); return size++; }
     
     /** Gets the bytecode at position <i>pos</i>
         @exception ArrayIndexOutOfBoundException if pos < 0 || pos >= size()
@@ -153,24 +153,24 @@ public class MethodGen implements CGConst {
     */    
     public final Object getArg(int pos) { return arg[pos]; }
     
-    /** Sets the argument for <i>pos</i> to <i>arg</i>. This is equivalent to set(pos,op,new Integer(arg)), but optimized to prevent the allocation when possible.
+    /** Sets the argument for <i>pos</i> to <i>arg</i>. This is equivalent to set(pos, op, new Integer(arg)), but optimized to prevent the allocation when possible.
         @exception ArrayIndexOutOfBoundException if pos < 0 || pos >= size()
-        @see #setArg(int,Object) */
-    public final void setArg(int pos, int arg) { set(pos,op[pos],N(arg)); }
+        @see #setArg(int, Object) */
+    public final void setArg(int pos, int arg) { set(pos, op[pos], N(arg)); }
     /** Sets the argument for <i>pos</i> to <i>arg</i>.
         @exception ArrayIndexOutOfBoundException if pos < 0 || pos >= size()
     */
-    public final void setArg(int pos, Object arg) { set(pos,op[pos],arg); }
+    public final void setArg(int pos, Object arg) { set(pos, op[pos], arg); }
     
     /** Sets the bytecode and argument  at <i>pos</i> to <i>op</i> and <i>arg</i> respectivly. 
-        This is equivalent to set(pos,op,arg?1:0) 
+        This is equivalent to set(pos, op, arg?1:0) 
         @exception ArrayIndexOutOfBoundException if pos < 0 || pos >= size()
     */
-    public final void set(int pos, byte op, boolean arg) { set(pos,op,arg?1:0); }
+    public final void set(int pos, byte op, boolean arg) { set(pos, op, arg?1:0); }
     
-    // This MUST handle x{LOAD,STORE} and LDC with an int arg WITHOUT falling back to set(int,byte,Object)
+    // This MUST handle x{LOAD, STORE} and LDC with an int arg WITHOUT falling back to set(int, byte, Object)
     /** Sets the bytecode and argument  at <i>pos</i> to <i>op</i> and <i>n</i> respectivly.
-        This is equivalent to set(pos,op, new Integer(n)), but optimized to prevent the allocation when possible.
+        This is equivalent to set(pos, op, new Integer(n)), but optimized to prevent the allocation when possible.
         @exception ArrayIndexOutOfBoundException if pos < 0 || pos >= size()
     */
     public final void set(int pos, byte op, int n) {
@@ -213,7 +213,7 @@ public class MethodGen implements CGConst {
                 }
                 break;
             default:
-                set(pos,op,N(n));
+                set(pos, op, N(n));
                 return;
         }            
         this.op[pos] = op;
@@ -227,13 +227,13 @@ public class MethodGen implements CGConst {
         switch(op) {
             case ILOAD: case ISTORE: case LLOAD: case LSTORE: case FLOAD:
             case FSTORE: case DLOAD: case DSTORE: case ALOAD: case ASTORE:
-                // set(int,byte,int) always handles these ops itself
-                set(pos,op,((Integer)arg).intValue());
+                // set(int, byte, int) always handles these ops itself
+                set(pos, op, ((Integer)arg).intValue());
                 return;
             case LDC:
-                // set(int,byte,int) always handles these opts itself
-                if(arg instanceof Integer) { set(pos,op,((Integer)arg).intValue()); return; }
-                if(arg instanceof Boolean) { set(pos,op,((Boolean)arg).booleanValue()); return; }
+                // set(int, byte, int) always handles these opts itself
+                if(arg instanceof Integer) { set(pos, op, ((Integer)arg).intValue()); return; }
+                if(arg instanceof Boolean) { set(pos, op, ((Boolean)arg).booleanValue()); return; }
                 
                 if(arg instanceof Long) {
                     long l = ((Long)arg).longValue();
@@ -286,8 +286,8 @@ public class MethodGen implements CGConst {
             this.lo = lo;
             this.hi = hi;
         }
-        public void setTargetForVal(int val, Object o) { setTarget(val-lo,o); }
-        public void setTargetForVal(int val, int n) { setTarget(val-lo,n); }
+        public void setTargetForVal(int val, Object o) { setTarget(val-lo, o); }
+        public void setTargetForVal(int val, int n) { setTarget(val-lo, n); }
         
         int length() { return 12 + targets.length * 4; } // 4bytes/target, hi, lo, default
     }
@@ -315,7 +315,7 @@ public class MethodGen implements CGConst {
         public final byte op;
         public final int varNum;
         public final int n;
-        Wide(byte op, int varNum) { this(op,varNum,0); }
+        Wide(byte op, int varNum) { this(op, varNum, 0); }
         Wide(byte op, int varNum, int n) { this.op = op; this.varNum = varNum; this.n = n; }
     }
         
@@ -361,10 +361,10 @@ public class MethodGen implements CGConst {
     
         int[] pc = new int[size];
         int[] maxpc = pc;
-        int p,i;
+        int p, i;
         
         // Pass1 - Calculate maximum pc of each bytecode, widen some insns, resolve any unresolved jumps, etc
-        for(i=0,p=0;i<size;i++) {
+        for(i=0, p=0;i<size;i++) {
             byte op = this.op[i];
             int opdata = OP_DATA[op&0xff];
             int j;
@@ -413,7 +413,7 @@ public class MethodGen implements CGConst {
                     int arg = ((Integer)this.arg[i]).intValue();
                     if(arg > 255) {
                         this.op[i] = WIDE;
-                        this.arg[i] = new Wide(op,arg);
+                        this.arg[i] = new Wide(op, arg);
                     }
                     break;
                 }
@@ -421,7 +421,7 @@ public class MethodGen implements CGConst {
                     Pair pair = (Pair) this.arg[i];
                     if(pair.i1 > 255 || pair.i2 < -128 || pair.i2 > 127) {
                         this.op[i] = WIDE;
-                        this.arg[i] = new Wide(IINC,pair.i1,pair.i2);
+                        this.arg[i] = new Wide(IINC, pair.i1, pair.i2);
                     }
                     break;
                 }
@@ -450,7 +450,7 @@ public class MethodGen implements CGConst {
         }
         
         // Pass3 - Calculate actual pc
-        for(i=0,p=0;i<size;i++) {
+        for(i=0, p=0;i<size;i++) {
             byte op = this.op[i];
             pc[i] = p;
             switch(op) {
@@ -464,7 +464,7 @@ public class MethodGen implements CGConst {
                     p = (p + 3) & ~3; // padding
                     p += 4; // default
                     if(op == TABLESWITCH) p += 4 + 4 + si.size() * 4; // lo, hi, targets
-                    else p += 4 + si.size() * 4 * 2; // count, key,val * targets
+                    else p += 4 + si.size() * 4 * 2; // count, key, val * targets
                     break;
                 }
                 case WIDE:
@@ -573,7 +573,7 @@ public class MethodGen implements CGConst {
         
         o.writeShort(exnTable.size());
         for(Enumeration e = exnTable.keys();e.hasMoreElements();)
-            ((ExnTableEnt)exnTable.get(e.nextElement())).dump(o,pc,codeSize);
+            ((ExnTableEnt)exnTable.get(e.nextElement())).dump(o, pc, codeSize);
         
         o.writeShort(codeAttrs.size());
         codeAttrs.dump(o);
@@ -581,13 +581,13 @@ public class MethodGen implements CGConst {
         baos.close();
         
         byte[] codeAttribute = baos.toByteArray();
-        attrs.add("Code",codeAttribute);
+        attrs.add("Code", codeAttribute);
         
         baos.reset();
         o.writeShort(thrownExceptions.size());
         for(Enumeration e = thrownExceptions.keys();e.hasMoreElements();)
             o.writeShort(cp.getIndex((CPGen.Ent)thrownExceptions.get(e.nextElement())));
-        attrs.add("Exceptions",baos.toByteArray());
+        attrs.add("Exceptions", baos.toByteArray());
         
         size = capacity = FINISHED;        
     }

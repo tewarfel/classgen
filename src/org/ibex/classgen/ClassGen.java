@@ -17,14 +17,14 @@ public class ClassGen implements CGConst {
     final CPGen cp;
     private final AttrGen attributes;
     
-    /** @see #ClassGen(Type.Object,Type.Object,int) */
+    /** @see #ClassGen(Type.Object, Type.Object, int) */
     public ClassGen(String name, String superName, int flags) {
         this(Type.fromDescriptor(name).asObject(), Type.fromDescriptor(superName).asObject(), flags);
     }
 
-    /** @see #ClassGen(Type.Object,Type.Object,int,Type.Object[]) */
-    public ClassGen(Type.Object thisType,Type.Object superType, int flags) {
-        this(thisType,superType,flags,null);
+    /** @see #ClassGen(Type.Object, Type.Object, int, Type.Object[]) */
+    public ClassGen(Type.Object thisType, Type.Object superType, int flags) {
+        this(thisType, superType, flags, null);
     }
     
     /** Creates a new ClassGen object 
@@ -32,7 +32,7 @@ public class ClassGen implements CGConst {
         @param superType The superclass of the generated class (commonly Type.OBJECT) 
         @param flags The access flags for this class (ACC_PUBLIC, ACC_FINAL, ACC_SUPER, ACC_INTERFACE, and ACC_ABSTRACT)
     */
-    public ClassGen(Type.Object thisType,Type.Object superType, int flags, Type.Object[] interfaces) {
+    public ClassGen(Type.Object thisType, Type.Object superType, int flags, Type.Object[] interfaces) {
         if((flags & ~(ACC_PUBLIC|ACC_FINAL|ACC_SUPER|ACC_INTERFACE|ACC_ABSTRACT)) != 0)
             throw new IllegalArgumentException("invalid flags");
         this.thisType = thisType;
@@ -56,7 +56,7 @@ public class ClassGen implements CGConst {
         @see CGConst
     */
     public final MethodGen addMethod(String name, Type ret, Type[] args, int flags) {
-        MethodGen mg = new MethodGen(this,name,ret,args,flags);
+        MethodGen mg = new MethodGen(this, name, ret, args, flags);
         methods.addElement(mg);
         return mg;
     }
@@ -72,7 +72,7 @@ public class ClassGen implements CGConst {
         @see CGConst
         */  
     public final FieldGen addField(String name, Type type, int flags) {
-        FieldGen fg = new FieldGen(this,name,type,flags);
+        FieldGen fg = new FieldGen(this, name, type, flags);
         fields.addElement(fg);
         return fg;
     }
@@ -96,10 +96,10 @@ public class ClassGen implements CGConst {
             String[] a = thisType.components();
             int i;
             for(i=0;i<a.length-1;i++) {
-                f = new File(f,a[i]);
+                f = new File(f, a[i]);
                 f.mkdir();
             }
-            f = new File(f,a[i] + ".class");
+            f = new File(f, a[i] + ".class");
         }
         OutputStream os = new FileOutputStream(f);
         dump(os);
@@ -125,7 +125,7 @@ public class ClassGen implements CGConst {
         cp.add(thisType);
         cp.add(superType);
         if(interfaces != null) for(int i=0;i<interfaces.length;i++) cp.add(interfaces[i]);
-        if(sourceFile != null && !attributes.contains("SourceFile")) attributes.add("SourceFile",cp.addUtf8(sourceFile));
+        if(sourceFile != null && !attributes.contains("SourceFile")) attributes.add("SourceFile", cp.addUtf8(sourceFile));
                 
         for(int i=0;i<methods.size();i++) ((MethodGen)methods.elementAt(i)).finish();
         for(int i=0;i<fields.size();i++) ((FieldGen)fields.elementAt(i)).finish();
@@ -228,7 +228,7 @@ public class ClassGen implements CGConst {
         
         public void add(String s, Object data) {
             cp.addUtf8(s);
-            ht.put(s,data);
+            ht.put(s, data);
         }
         
         public boolean contains(String s) { return ht.get(s) != null; }
@@ -256,28 +256,28 @@ public class ClassGen implements CGConst {
     
     /*public static void main(String[] args) throws Exception {
         Type.Object me = new Type.Object("Test");
-        ClassGen cg = new ClassGen("Test","java.lang.Object",ACC_PUBLIC|ACC_SUPER|ACC_FINAL);
-        FieldGen fg = cg.addField("foo",Type.INT,ACC_PUBLIC|ACC_STATIC);
+        ClassGen cg = new ClassGen("Test", "java.lang.Object", ACC_PUBLIC|ACC_SUPER|ACC_FINAL);
+        FieldGen fg = cg.addField("foo", Type.INT, ACC_PUBLIC|ACC_STATIC);
         
-        MethodGen mg = cg.addMethod("main",Type.VOID,new Type[]{Type.arrayType(Type.STRING)},ACC_STATIC|ACC_PUBLIC);
+        MethodGen mg = cg.addMethod("main", Type.VOID, new Type[]{Type.arrayType(Type.STRING)}, ACC_STATIC|ACC_PUBLIC);
         mg.setMaxLocals(1);
         mg.addPushConst(0);
         //mg.add(ISTORE_0);
-        mg.add(PUTSTATIC, fieldRef(me,"foo",Type.INT));
+        mg.add(PUTSTATIC, fieldRef(me, "foo", Type.INT));
         int top = mg.size();
-        mg.add(GETSTATIC,cg.fieldRef(new Type.Object("java.lang.System"),"out",new Type.Object("java.io.PrintStream")));
+        mg.add(GETSTATIC, cg.fieldRef(new Type.Object("java.lang.System"), "out", new Type.Object("java.io.PrintStream")));
         //mg.add(ILOAD_0);
-        mg.add(GETSTATIC,cg.fieldRef(me,"foo",Type.INT));
-        mg.add(INVOKEVIRTUAL,cg.methodRef(new Type.Object("java.io.PrintStream"),"println",Type.VOID, new Type[]{Type.INT}));
-        //mg.add(IINC,new int[]{0,1});
+        mg.add(GETSTATIC, cg.fieldRef(me, "foo", Type.INT));
+        mg.add(INVOKEVIRTUAL, cg.methodRef(new Type.Object("java.io.PrintStream"), "println", Type.VOID, new Type[]{Type.INT}));
+        //mg.add(IINC, new int[]{0, 1});
         //mg.add(ILOAD_0);
-        mg.add(GETSTATIC,cg.fieldRef(me,"foo",Type.INT));
+        mg.add(GETSTATIC, cg.fieldRef(me, "foo", Type.INT));
         mg.addPushConst(1);
         mg.add(IADD);
         mg.add(DUP);
-        mg.add(PUTSTATIC,cg.fieldRef(me,"foo",Type.INT));       
+        mg.add(PUTSTATIC, cg.fieldRef(me, "foo", Type.INT));       
         mg.addPushConst(10);
-        mg.add(IF_ICMPLT,top);
+        mg.add(IF_ICMPLT, top);
         mg.add(RETURN);
         cg.dump("Test.class");
     }*/

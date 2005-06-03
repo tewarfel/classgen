@@ -17,7 +17,7 @@ public class MethodRef extends ClassGen.FieldOrMethodRef {
         @see #MethodRef(Type.Object,String,Type,Type[])
     */
     public MethodRef(String s, String name, Type ret, Type[] args) {
-        this(new Type.Object(s),name,ret,args);
+        this(Type.fromDescriptor(s).asObject(), name, ret, args);
     }
     MethodRef(MethodRef i) { super(i); }
     

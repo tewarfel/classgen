@@ -25,7 +25,7 @@ public class Type {
     
     final String descriptor;
     
-    Type(String descriptor) { this.descriptor = descriptor; }
+    protected Type(String descriptor) { this.descriptor = descriptor; }
     
     public static Type fromDescriptor(String descriptor) {
         if(descriptor.equals("V")) return VOID;
@@ -37,6 +37,8 @@ public class Type {
         if(descriptor.equals("B")) return BYTE;
         if(descriptor.equals("C")) return CHAR;
         if(descriptor.equals("S")) return SHORT;
+        if(descriptor.endsWith("[")) return new Type.Array(fromDescriptor(descriptor.substring(0, descriptor.indexOf('['))),
+                                                           descriptor.length() - descriptor.indexOf('['));
         if(Type.Object.validDescriptorString(descriptor)) return new Type.Object(descriptor);
         return null;
     }
@@ -56,20 +58,22 @@ public class Type {
         @param dim Number if dimensions
         @return A one dimensional array of the base type
     */
-    public static Type arrayType(Type base, int dim) {
-        StringBuffer sb = new StringBuffer(base.descriptor.length() + dim);
-        for(int i=0;i<dim;i++) sb.append("[");
-        sb.append(base.descriptor);
-        return new Type(sb.toString());
-    }
-    
-    /** Class representing Objec types (any non-primitive type) */
+    public static Type arrayType(Type base, int dim) { return new Type.Array(base, dim); }
+
+    public Type.Object asObject() { throw new RuntimeException("attempted to use "+this+" as a Type.Object, which it is not"); }
+    public Type.Array asArray() { throw new RuntimeException("attempted to use "+this+" as a Type.Array, which it is not"); }
+    public boolean isObject() { return false; }
+    public boolean isArray() { return false; }
+
+    /** Class representing Object types (any non-primitive type) */
     public static class Object extends Type {
         /** Create an Type.Object instance for the specified string. <i>s</i> can be a string in the form
             "java.lang.String", "java/lang/String", or "Ljava/lang/String;".
             @param s The type */
-        public Object(String s) { super(_initHelper(s)); }
-        
+        protected Object(String s) { super(_initHelper(s)); }
+        public Type.Object asObject() { return this; }
+        public boolean isObject() { return true; }
+
         private static String _initHelper(String s) {
             if(!s.startsWith("L") || !s.endsWith(";")) s = "L" + s.replace('.','/') + ";";
             if(!validDescriptorString(s)) throw new IllegalArgumentException("invalid descriptor string");
@@ -89,4 +93,17 @@ public class Type {
             return s.startsWith("L") && s.endsWith(";");
         }
     }    
+
+    public static class Array extends Object {
+        protected Array(Type t, int dim) {  super(arrayify(t,dim)); }
+        public Type.Array asArray() { return this; }
+        public boolean isArray() { return true; }
+        private static String arrayify(Type t, int dim) {
+            StringBuffer sb = new StringBuffer(t.descriptor.length() + dim);
+            for(int i=0;i<dim;i++) sb.append("[");
+            sb.append(t.descriptor);
+            return sb.toString();
+        }
+    }
+
 }

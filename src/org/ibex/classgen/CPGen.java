@@ -88,7 +88,7 @@ class CPGen {
         private String fixme() { throw new Error("fixme"); }
         Object key() throws ClassGen.ClassReadExn {
             switch(tag) {
-                case 7: return new Type.Object(((Utf8Ent)e0).s);
+                case 7: return Type.fromDescriptor(((Utf8Ent)e0).s);
                 case 8: return (((Utf8Ent)e1).s);
                 case 9: {
                     NameAndTypeKey nt = (NameAndTypeKey) e2.key();
@@ -156,7 +156,7 @@ class CPGen {
         return ent.n;
     }
 
-    public final Type.Object getType(int index) { return new Type.Object(((Utf8Ent)getByIndex(index)).s); }
+    public final Type.Object getType(int index) { return Type.fromDescriptor(((Utf8Ent)getByIndex(index)).s).asObject(); }
 
     public final Ent getByIndex(int index) {
         if(state < STABLE) throw new IllegalStateException("constant pool is not stable");

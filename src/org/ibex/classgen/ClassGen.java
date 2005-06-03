@@ -19,7 +19,7 @@ public class ClassGen implements CGConst {
     
     /** @see #ClassGen(Type.Object,Type.Object,int) */
     public ClassGen(String name, String superName, int flags) {
-        this(new Type.Object(name),new Type.Object(superName),flags);
+        this(Type.fromDescriptor(name).asObject(), Type.fromDescriptor(superName).asObject(), flags);
     }
 
     /** @see #ClassGen(Type.Object,Type.Object,int,Type.Object[]) */

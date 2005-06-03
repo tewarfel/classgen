@@ -4,7 +4,7 @@ import java.io.*;
 import java.util.*;
 
 /** A class representing a method in a generated classfile
-    @see ClassGen#addMethod */
+    @see ClassFile#addMethod */
 public class MethodGen implements CGConst {
     private final static boolean EMIT_NOPS = false;
     
@@ -16,8 +16,8 @@ public class MethodGen implements CGConst {
     private final Type ret;
     private final Type[] args;
     private final int flags;
-    private final ClassGen.AttrGen attrs;
-    private final ClassGen.AttrGen codeAttrs;
+    private final ClassFile.AttrGen attrs;
+    private final ClassFile.AttrGen codeAttrs;
     private final Hashtable exnTable = new Hashtable();
     private final Hashtable thrownExceptions = new Hashtable();
     
@@ -31,7 +31,7 @@ public class MethodGen implements CGConst {
     
     public String toString() { StringBuffer sb = new StringBuffer(); toString(sb, "<init>"); return sb.toString(); }
     public void   toString(StringBuffer sb, String constructorName) {
-        sb.append(ClassGen.flagsToString(flags));
+        sb.append(ClassFile.flagsToString(flags));
         sb.append(ret);
         sb.append(" ");
 
@@ -59,10 +59,10 @@ public class MethodGen implements CGConst {
         //String args = descriptor.substring(1, descriptor.indexOf(')'));
         args = new Type[0]; // FIXME
         codeAttrs = null;
-        attrs = new ClassGen.AttrGen(cp, in);
+        attrs = new ClassFile.AttrGen(cp, in);
     }
 
-    MethodGen(ClassGen owner, String name, Type ret, Type[] args, int flags) {
+    MethodGen(ClassFile owner, String name, Type ret, Type[] args, int flags) {
         if((flags & ~(ACC_PUBLIC|ACC_PRIVATE|ACC_PROTECTED|ACC_STATIC|ACC_FINAL|ACC_SYNCHRONIZED|ACC_NATIVE|ACC_ABSTRACT|ACC_STRICT)) != 0)
             throw new IllegalArgumentException("invalid flags");
         this.cp = owner.cp;
@@ -71,8 +71,8 @@ public class MethodGen implements CGConst {
         this.args = args;
         this.flags = flags;
         
-        attrs = new ClassGen.AttrGen(cp);
-        codeAttrs = new ClassGen.AttrGen(cp);
+        attrs = new ClassFile.AttrGen(cp);
+        codeAttrs = new ClassFile.AttrGen(cp);
         
         cp.addUtf8(name);
         cp.addUtf8(getDescriptor());
@@ -511,7 +511,7 @@ public class MethodGen implements CGConst {
         }
         int codeSize = p;
         
-        if(codeSize >= 65536) throw new ClassGen.Exn("method too large in size");
+        if(codeSize >= 65536) throw new ClassFile.Exn("method too large in size");
         
         o.writeShort(maxStack);
         o.writeShort(maxLocals);
@@ -533,7 +533,7 @@ public class MethodGen implements CGConst {
             switch(op) {
                 case IINC: {
                     Pair pair = (Pair) arg;
-                    if(pair.i1 > 255 || pair.i2 < -128 || pair.i2 > 127) throw new ClassGen.Exn("overflow of iinc arg"); 
+                    if(pair.i1 > 255 || pair.i2 < -128 || pair.i2 > 127) throw new ClassFile.Exn("overflow of iinc arg"); 
                     o.writeByte(pair.i1);
                     o.writeByte(pair.i2);
                     break;
@@ -571,7 +571,7 @@ public class MethodGen implements CGConst {
                     if((opdata & OP_BRANCH_FLAG) != 0) {
                         int v = pc[((Integer)arg).intValue()] - pc[i];
                         if(argLength == 2) {
-                            if(v < -32768 || v > 32767) throw new ClassGen.Exn("overflow of s2 offset");
+                            if(v < -32768 || v > 32767) throw new ClassFile.Exn("overflow of s2 offset");
                             o.writeShort(v);
                         } else if(argLength == 4) {
                             o.writeInt(v);
@@ -588,10 +588,10 @@ public class MethodGen implements CGConst {
                     } else {
                         int iarg  = ((Integer)arg).intValue();
                         if(argLength == 1) {
-                            if(iarg < -128 || iarg >= 256) throw new ClassGen.Exn("overflow of s/u1 option");
+                            if(iarg < -128 || iarg >= 256) throw new ClassFile.Exn("overflow of s/u1 option");
                             o.writeByte(iarg);
                         } else if(argLength == 2) {
-                            if(iarg < -32768 || iarg >= 65536) throw new ClassGen.Exn("overflow of s/u2 option"); 
+                            if(iarg < -32768 || iarg >= 65536) throw new ClassFile.Exn("overflow of s/u2 option"); 
                             o.writeShort(iarg);
                         } else {
                             throw new Error("should never happen");

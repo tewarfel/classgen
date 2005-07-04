@@ -37,6 +37,7 @@ public class JSSA extends MethodGen implements CGConst {
                     ops[numOps] = o;
                     ofs[numOps++] = pc;
                 }
+                if (o!=null && o instanceof Branch) ((Branch)o).branchTo();
                 if (o==null || (!(o instanceof Branch))) branchTo(pc+1);
             } catch(RuntimeException e) {
                 System.err.println("Had a problem at PC: " + pc + " of " + method);
@@ -47,12 +48,15 @@ public class JSSA extends MethodGen implements CGConst {
     }
 
     public void branchTo(int newPC) {
+        System.out.println("!!!branchTo("+newPC+")!!!");
         if (stacks[newPC] == null) {
             stacks[newPC] = new Phi[sp];
             for(int i=0; i<sp; i++) stacks[newPC][i] = new Phi();
         }
-        if (stacks[newPC].length != sp) throw new IllegalArgumentException("stack depth disagreement");
+        if (stacks[newPC].length != sp)
+            throw new IllegalArgumentException("stack depth disagreement: " + sp + " " + stacks[newPC].length);
         for(int i=0; i<stacks[newPC].length; i++) stacks[newPC][i].merge(stack[i]);
+        for(int i=0; i<maxLocals; i++) locals[newPC][i].merge(locals[pc][i]);
     }
     
     private Object[] ops = new Object[65535];
@@ -127,7 +131,7 @@ public class JSSA extends MethodGen implements CGConst {
          *  redundant information that could possibly "disagree" with itself -- this happened a LOT in Soot) */
         public abstract Type getType();
         public String _toString() { return super.toString(); }
-        public String toString() {
+        public String toString() { return _toString(); } /*
             String s = (String)bindingMap.get(this);
             if (s != null) return s;
             String prefix;
@@ -139,7 +143,7 @@ public class JSSA extends MethodGen implements CGConst {
             s = prefix + (nextVar++);
             bindingMap.put(this,s);
             return "(" + s + " = " + _toString() + ")";
-        }
+            }*/
     }
 
     /**
@@ -168,6 +172,8 @@ public class JSSA extends MethodGen implements CGConst {
             inputs[1] = e2;
         }
         public void merge(Expr e) {
+            if (e==this) return;
+            for(int i=0; i<inputs.length; i++) if (inputs[i]==e) return;
             Expr[] newinputs = new Expr[inputs.length + 1];
             System.arraycopy(inputs, 0, newinputs, 0, inputs.length);
             newinputs[newinputs.length-1] = e;
@@ -176,22 +182,31 @@ public class JSSA extends MethodGen implements CGConst {
         public String toString() {
             if (inputs.length == 1) return inputs[0].toString();
             StringBuffer ret = new StringBuffer();
-            ret.append("{{ ");
+            int count = 0;
             for(int i=0; i<inputs.length; i++) {
-                ret.append(inputs[i].toString());
+                String s = inputs[i].toString().trim();
+                if (s.length() == 0) continue;
+                count++;
+                ret.append(s);
                 ret.append(" ");
             }
-            ret.append("}}");
-            return ret.toString();
+            if (count == 0) return "";
+            if (count == 1) return ret.toString().trim();
+            return "{{ " + ret.toString() + "}}";
+            //return "{"+ret+"}";
         }
         public Type getType() {
+            if (inputs.length == 0) return null;
             // sanity check
             Type t = inputs[0].getType();
 
             // FIXME: actually this should check type-unifiability... fe, the "type of null" unifies with any Type.Ref
-            for(int i=1; i<inputs.length; i++)
+            for(int i=1; i<inputs.length; i++) {
+                if (t==null) { t = inputs[i].getType(); continue; }
+                if (inputs[i].getType() == null) continue;
                 if (inputs[i].getType() != t)
-                    throw new Error("Phi node with disagreeing types!  Crisis!");
+                    throw new Error("Phi node with disagreeing types: " + t + " " + inputs[i].getType() +"\n  Crisis!");
+            }
             return t;
         }
     }
@@ -279,7 +294,8 @@ public class JSSA extends MethodGen implements CGConst {
     public class BinMath extends BinExpr {
         public BinMath(Expr e1, Expr e2, String show) {
             super(e2, e1, show); 
-            if (e1.getType() != e2.getType()) throw new IllegalArgumentException("types disagree");
+            if (e1.getType() != null && e2.getType() != null && e1.getType() != e2.getType())
+                throw new IllegalArgumentException("types disagree");
         }
         public Type getType() { return e1.getType(); }
     }
@@ -334,14 +350,11 @@ public class JSSA extends MethodGen implements CGConst {
 
     public class Branch extends Op {
         Expr destination = null;
-        Expr condition = null;
-        public Branch(Expr condition, Expr destination) { this(destination); this.condition = condition; }
         public Branch(Expr destination) { this.destination = destination; }
         public Branch(MethodGen.Switch s) { /* FIXME */ }
         public Branch() { }
-        public void branchTo() { branchTo(destination); }
+        public void branchTo() { if (destination != null) branchTo(destination); }
         private void branchTo(Expr e) {
-            if (condition != null) JSSA.this.branchTo(pc+1);
             if (e instanceof Phi) {
                 Phi phi = (Phi)e;
                 for(int i=0; i<phi.inputs.length; i++) branchTo(phi.inputs[i]);
@@ -370,16 +383,34 @@ public class JSSA extends MethodGen implements CGConst {
         }
         public String toString() { return e.getType() == Type.VOID ? "return" : ("return "+e.toString()); }
     }
-    public class Goto extends Branch { }
-    public class RET extends Branch { }
-    public class JSR extends Branch { public JSR(Label l) { super(l); } }
-    public class If extends Branch { }
+    public class Goto extends Branch {
+        public Goto(Expr destination) { super(destination); }
+        public String toString() { return "goto " + destination; }
+    }
+    public class RET extends Branch {
+        public RET(Expr destination) { super(destination); }
+        public String toString() { return "retsub [" + destination + "]"; }
+    }
+    public class JSR extends Branch {
+        public JSR(Expr destination) { super(destination); }
+        public String toString() { return "callsub " + destination; }
+    }
+    public class If extends Branch {
+        Expr condition = null;
+        public If(Expr condition, Expr destination) { super(destination); this.condition = condition; }
+        public String toString() { return "if (" + condition + ") goto " + destination; }
+        public void branchTo() {
+            if (condition != null) JSSA.this.branchTo(pc+1);
+            super.branchTo();
+        }
+    }
 
     /** represents a "returnaddr" pushed onto the stack */
     public class Label extends Expr {
         public int pc;
-        public Label(int i) { this.pc = pc; }
+        public Label(int i) { this.pc = i; }
         public Type getType() { throw new Error("attempted to call getType() on a Label"); }
+        public String toString() { return "<<label " + pc + ">>"; }
     }
 
     public class New extends Expr {
@@ -547,6 +578,7 @@ public class JSSA extends MethodGen implements CGConst {
             i1 = p.i1;
             i2 = p.i2;
         }
+        if (arg instanceof Number) i1 = ((Integer)arg).intValue();
         Label label = (arg instanceof Label) ? (Label)arg : null;
         switch(op) {
 
@@ -614,26 +646,26 @@ public class JSSA extends MethodGen implements CGConst {
 
                 // Control and branching //////////////////////////////////////////////////////////////////////////////
 
-            case IFNULL:                                return new Branch(new Eq(pop(), new Constant(null)), new Label(i1));
-            case IFNONNULL:                             return new Branch(new Not(new Eq(pop(),new Constant(null))),new Label(i1));
-            case IFEQ:                                  return new Branch(    new Eq(new Constant(0), pop()), label);
-            case IFNE:                                  return new Branch(new Not(new Eq(new Constant(0), pop())), label);
-            case IFLT:                                  return new Branch(    new Lt(new Constant(0), pop()), label);
-            case IFGE:                                  return new Branch(new Not(new Lt(new Constant(0), pop())), label);
-            case IFGT:                                  return new Branch(    new Gt(new Constant(0), pop()), label);
-            case IFLE:                                  return new Branch(new Not(new Gt(new Constant(0), pop())), label);
-            case IF_ICMPEQ:                             return new Branch(    new Eq(pop(), pop()), label);
-            case IF_ICMPNE:                             return new Branch(new Not(new Eq(pop(), pop())), label);
-            case IF_ICMPLT:                             return new Branch(    new Lt(pop(), pop()), label);
-            case IF_ICMPGE:                             return new Branch(new Not(new Lt(pop(), pop())), label);
-            case IF_ICMPGT:                             return new Branch(    new Gt(pop(), pop()),  label);
-            case IF_ICMPLE:                             return new Branch(new Not(new Gt(pop(), pop())), label);
-            case IF_ACMPEQ:                             return new Branch(    new Eq(pop(), pop()), label);
-            case IF_ACMPNE:                             return new Branch(new Not(new Eq(pop(), pop())), label);
+            case IFNULL:                                return new If(new Eq(pop(), new Constant(null)), new Label(i1));
+            case IFNONNULL:                             return new If(new Not(new Eq(pop(),new Constant(null))),new Label(i1));
+            case IFEQ:                                  return new If(    new Eq(new Constant(0), pop()), new Label(i1));
+            case IFNE:                                  return new If(new Not(new Eq(new Constant(0), pop())), new Label(i1));
+            case IFLT:                                  return new If(    new Lt(new Constant(0), pop()), new Label(i1));
+            case IFGE:                                  return new If(new Not(new Lt(new Constant(0), pop())), new Label(i1));
+            case IFGT:                                  return new If(    new Gt(new Constant(0), pop()), new Label(i1));
+            case IFLE:                                  return new If(new Not(new Gt(new Constant(0), pop())), new Label(i1));
+            case IF_ICMPEQ:                             return new If(    new Eq(pop(), pop()), new Label(i1));
+            case IF_ICMPNE:                             return new If(new Not(new Eq(pop(), pop())), new Label(i1));
+            case IF_ICMPLT:                             return new If(    new Lt(pop(), pop()), new Label(i1));
+            case IF_ICMPGE:                             return new If(new Not(new Lt(pop(), pop())), new Label(i1));
+            case IF_ICMPGT:                             return new If(    new Gt(pop(), pop()), new Label(i1));
+            case IF_ICMPLE:                             return new If(new Not(new Gt(pop(), pop())), new Label(i1));
+            case IF_ACMPEQ:                             return new If(    new Eq(pop(), pop()), new Label(i1));
+            case IF_ACMPNE:                             return new If(new Not(new Eq(pop(), pop())), new Label(i1));
             case ATHROW:                                                       return new Throw(pop());
-            case GOTO:                                                         return new Branch(locals[pc][i1]);
-            case JSR:                                   push(new Label(pc+3)); return new JSR(new Label(pc+i1));
-            case RET:                                                          return new RET();
+            case GOTO:                                                         return new Goto(locals[pc][i1]);
+            case JSR:                                   push(new Label(pc));   return new JSR(new Label(i1));
+            case RET:                                                          return new RET(pop());
             case RETURN:                                                       return new Return();
             case IRETURN: case LRETURN: case FRETURN: case DRETURN: case ARETURN:
                 return new Return(pop());

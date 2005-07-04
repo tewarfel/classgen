@@ -13,24 +13,34 @@ public class JSSA extends MethodGen implements CGConst {
     
     public JSSA(Type.Class c, DataInput in, ConstantPool cp) throws IOException {
         super(c, in, cp);
-        local = new Expr[maxLocals];
-        stack = new Expr[maxStack];
+        locals = new Phi[size()][maxLocals];
+        stacks = new Phi[size()][maxStack];
+        sps    = new int [size()];
+        sps[0] = 0;
         int n=0;
+        locals[0] = new Phi[maxLocals];
         if (!isStatic())
-            local[n++] = new Argument("this",method.getDeclaringClass());
+            locals[0][n++] = phi(new Argument("this",method.getDeclaringClass()));
         for(int i=0;i<this.method.getNumArgs(); i++)
-            local[n++] = new Argument("arg"+i, this.method.getArgType(i));
-        for(int i=0; i<size(); i++) {
-            int    op  = get(i);
-            Object arg = getArg(i);
+            locals[0][n++] = phi(new Argument("arg"+i, this.method.getArgType(i)));
+        for(pc=0; pc<size(); pc++) {
+            int    op  = get(pc);
+            Object arg = getArg(pc);
             try {
+                if (pc<size()-1) {
+                    locals[pc+1] = new Phi[maxLocals];
+                    for(int j=0; j<maxLocals; j++) locals[pc+1][j] = locals[pc][j];
+                    sps[pc+1] = sps[pc];
+                    stacks[pc+1] = new Phi[maxStack];
+                    for(int j=0; j<sps[pc]; j++) stacks[pc+1][j] = stacks[pc][j];
+                }
                 Object o = addOp(op, arg);
                 if (o != null) {
                     ops[numOps] = o;
-                    ofs[numOps++] = i;
+                    ofs[numOps++] = pc;
                 }
             } catch(RuntimeException e) {
-                System.err.println("Had a problem at PC: " + i + " of " + method);
+                System.err.println("Had a problem at PC: " + pc + " of " + method);
                 e.printStackTrace();
                 throw new IOException("invalid class file");
             }
@@ -44,25 +54,33 @@ public class JSSA extends MethodGen implements CGConst {
     // Instance Data; used ONLY during constructor; then thrown away /////////////////////////////////////////////////
 
     /** this models the JVM locals; it is only used for unwinding stack-ops into an SSA-tree, then thrown away */
-    private final Expr[] local;
+    private final Phi[][] locals;
     
     /** this models the JVM stack; it is only used for unwinding stack-ops into an SSA-tree, then thrown away */
-    private final Expr[] stack;
+    private final Phi[][] stacks;
 
     /** JVM stack pointer */
-    private int sp = 0;
-    
+    private final int sps[];
+    private int pc = 0;
+
     private Expr push(Expr e) {
-        if (sp == stack.length) {
-            for(int i=0;i<stack.length;i++) System.err.println("Stack " + i + ": " + stack[i]);
-            throw new IllegalStateException("stack overflow (" + stack.length + ")");
+        // FIXME: need to verify that stacks are same size at target of branch
+        if (sps[pc+1] == maxStack) {
+            for(int i=0;i<maxStack;i++) System.err.println("Stack " + i + ": " + stacks[pc][i]);
+            throw new IllegalStateException("stack overflow (" + maxStack + ")");
         }
         if (e.getType() == Type.VOID) throw new IllegalArgumentException("can't push a void");
-        return stack[sp++] = e;
+        stacks[pc+1][sps[pc+1]++].merge(e);
+        return stacks[pc+1][sps[pc+1]++];
     }
     private Expr pop() {
-        if (sp == 0) throw new IllegalStateException("stack underflow");
-        return stack[--sp];
+        // FIXME: need to verify that stacks are same size at target of branch
+        if (pc == sps.length-1) { /* FIXME? */ return stacks[pc][sps[pc]-1]; }
+        if (sps[pc+1] == 0) throw new IllegalStateException("stack underflow");
+        sps[pc+1]--;
+        Expr ret = stacks[pc+1][sps[pc+1]];
+        stacks[pc+1][sps[pc+1]] = null;
+        return ret;
     }
     
     private Op seqPush(Expr e) {
@@ -107,21 +125,62 @@ public class JSSA extends MethodGen implements CGConst {
         /** every JSSA.Expr either remembers its type _OR_ knows how to figure it out (the latter is preferred to eliminate
          *  redundant information that could possibly "disagree" with itself -- this happened a LOT in Soot) */
         public abstract Type getType();
-        
-        public final String toString() { return exprToString(this); }
-        public String _toString() { return super.toString(); } // Adam is going to hate me for this (yes; why is this here?)
+        public String _toString() { return super.toString(); }
+        public String toString() {
+            String s = (String)bindingMap.get(this);
+            if (s != null) return s;
+            String prefix;
+            if (getType() == Type.VOID) return _toString();
+            else if (getType() == Type.DOUBLE || getType() == Type.FLOAT) prefix = "f";
+            else if (getType().isPrimitive()) prefix = "i";
+            else if (getType().isArray()) prefix = "a";
+            else prefix = "o";
+            s = prefix + (nextVar++);
+            bindingMap.put(this,s);
+            return "(" + s + " = " + _toString() + ")";
+        }
     }
 
     /**
-     *  A "nondeterministic merge" -- for example when the first instruction in a loop reads from a local which could have been
-     *  written to either by some instruction at the end of the previous iteration of the loop or by some instruction before
+     *  A "nondeterministic merge" -- for example when the first
+     *  instruction in a loop reads from a local which could have been
+     *  written to either by some instruction at the end of the
+     *  previous iteration of the loop or by some instruction before
      *  the loop (on the first iteration).
+     *
+     *  Note that Phi's are *mutable*.  This means that when one Phi
+     *  holds a reference to another, updates to the referenced Phi
+     *  are "seen" by the other Phi.  This prevents us from having to
+     *  repeat loops to propagate the Phis.
      */
     public class Phi extends Expr {
-        private final Expr[] inputs;
-        public Phi(Expr[] inputs) {
-            this.inputs = new Expr[inputs.length];
-            System.arraycopy(inputs, 0, this.inputs, 0, inputs.length);
+        Expr[] inputs;
+        public Phi(Expr[] inputs) { this.inputs = inputs; }
+        public Phi(Expr e1) {
+            this.inputs = new Expr[1];
+            inputs[0] = e1;
+        }
+        public Phi(Expr e1, Expr e2) {
+            this.inputs = new Expr[2];
+            inputs[0] = e1;
+            inputs[1] = e2;
+        }
+        public void merge(Expr e) {
+            Expr[] newinputs = new Expr[inputs.length + 1];
+            System.arraycopy(inputs, 0, newinputs, 0, inputs.length);
+            newinputs[newinputs.length-1] = e;
+            inputs = newinputs;
+        }
+        public String toString() {
+            if (inputs.length == 1) return inputs[0].toString();
+            StringBuffer ret = new StringBuffer();
+            ret.append("{{ ");
+            for(int i=0; i<inputs.length; i++) {
+                ret.append(inputs[i].toString());
+                ret.append(" ");
+            }
+            ret.append("}}");
+            return ret.toString();
         }
         public Type getType() {
             // sanity check
@@ -135,6 +194,8 @@ public class JSSA extends MethodGen implements CGConst {
         }
     }
 
+    public Phi phi(Expr e) { return e instanceof Phi ? ((Phi)e) : new Phi(e); }
+
     public class Argument extends Expr {
         public final String name;
         public final Type t;
@@ -143,7 +204,9 @@ public class JSSA extends MethodGen implements CGConst {
         public Type getType() { return t; }
     }
     
-    // Unary Operations
+
+    // Unary Operations //////////////////////////////////////////////////////////////////////////////
+    
     public class Not extends Expr {
         public final Expr e;
         public Not(Expr e) {
@@ -163,6 +226,7 @@ public class JSSA extends MethodGen implements CGConst {
         public Type getType() { return e.getType(); }
         public String _toString() { return "- (" + e + ")"; }
     }
+
     
     // Binary Operations //////////////////////////////////////////////////////////////////////////////
 
@@ -172,7 +236,7 @@ public class JSSA extends MethodGen implements CGConst {
         private final String show;
         public BinExpr(Expr e1, Expr e2, String show) { this.e1 = e1; this.e2 = e2; this.show = show; }
         public String _toString() {
-            // FEATURE: should we be doing some precedence stuff here? probably no worth it for debugging output
+            // FEATURE: should we be doing some precedence stuff here? probably not worth it for debugging output
             return "(" + e1 + show + e2 + ")";
         }
     }
@@ -186,9 +250,9 @@ public class JSSA extends MethodGen implements CGConst {
         public Eq(Expr e1, Expr e2) {
             super(e1, e2, "=="); 
             if (e1.getType().isPrimitive() != e2.getType().isPrimitive())
-                throw new IllegalArgumentException("type mismatch");
+                throw new IllegalArgumentException("type mismatch: " + e1.getType() + " and " + e2.getType());
             if (e1.getType().isPrimitive() && e1.getType() != e2.getType())
-                throw new IllegalArgumentException("type mismatch");            
+                throw new IllegalArgumentException("type mismatch: " + e1.getType() + " and " + e2.getType());
             // FEATURE: Check if we can compare these classes
         }
     }
@@ -205,6 +269,7 @@ public class JSSA extends MethodGen implements CGConst {
     public class Lt extends PrimitiveComparison { public Lt(Expr e1, Expr e2) { super(e1, e2, "<"); } }
     public class Ge extends PrimitiveComparison { public Ge(Expr e1, Expr e2) { super(e1, e2, ">="); } }
     public class Le extends PrimitiveComparison { public Le(Expr e1, Expr e2) { super(e1, e2, "<="); } }
+
     
 
     // Math Operations //////////////////////////////////////////////////////////////////////////////
@@ -434,7 +499,7 @@ public class JSSA extends MethodGen implements CGConst {
         private final Object o;
         public Constant(int i) { this(new Integer(i)); }
         public Constant(Object o) { this.o = o; }
-        public String _toString() { return o == null ? "null" : o instanceof String ? "\"" + o + "\"" : o.toString(); }
+        public String toString() { return o == null ? "null" : o instanceof String ? "\"" + o + "\"" : o.toString(); }
         public Type getType() {
             if (o == null) return Type.NULL;
             if (o instanceof Byte) return Type.BYTE;
@@ -483,20 +548,25 @@ public class JSSA extends MethodGen implements CGConst {
             case ICONST_3:                                                             push(new Constant(3));    return null;
             case ICONST_4:                                                             push(new Constant(4));    return null;
             case ICONST_5:                                                             push(new Constant(5));    return null;
-            case ILOAD:    case LLOAD:    case FLOAD:    case DLOAD:    case ALOAD:    push(local[i1]);          return null;
-            case ILOAD_0:  case LLOAD_0:  case FLOAD_0:  case DLOAD_0:  case ALOAD_0:  push(local[0]);           return null;
-            case ILOAD_1:  case LLOAD_1:  case FLOAD_1:  case DLOAD_1:  case ALOAD_1:  push(local[1]);           return null;
-            case ALOAD_2:  case DLOAD_2:  case FLOAD_2:  case LLOAD_2:  case ILOAD_2:  push(local[2]);           return null;
-            case ILOAD_3:  case LLOAD_3:  case FLOAD_3:  case DLOAD_3:  case ALOAD_3:  push(local[3]);           return null;
-            case ISTORE:   case LSTORE:   case FSTORE:   case DSTORE:   case ASTORE:   local[i1] = pop();        return null;
-            case ISTORE_0: case LSTORE_0: case FSTORE_0: case DSTORE_0: case ASTORE_0: local[0]  = pop();        return null;
-            case ISTORE_1: case LSTORE_1: case FSTORE_1: case DSTORE_1: case ASTORE_1: local[1]  = pop();        return null;
-            case ASTORE_2: case DSTORE_2: case FSTORE_2: case LSTORE_2: case ISTORE_2: local[2]  = pop();        return null;
-            case ISTORE_3: case LSTORE_3: case FSTORE_3: case DSTORE_3: case ASTORE_3: local[3]  = pop();        return null;
+            case ILOAD:    case LLOAD:    case FLOAD:    case DLOAD:    case ALOAD:    push(locals[pc][i1]);     return null;
+            case ILOAD_0:  case LLOAD_0:  case FLOAD_0:  case DLOAD_0:  case ALOAD_0:  push(locals[pc][0]);      return null;
+            case ILOAD_1:  case LLOAD_1:  case FLOAD_1:  case DLOAD_1:  case ALOAD_1:  push(locals[pc][1]);      return null;
+            case ALOAD_2:  case DLOAD_2:  case FLOAD_2:  case LLOAD_2:  case ILOAD_2:  push(locals[pc][2]);      return null;
+            case ILOAD_3:  case LLOAD_3:  case FLOAD_3:  case DLOAD_3:  case ALOAD_3:  push(locals[pc][3]);      return null;
+            case ISTORE:   case LSTORE:   case FSTORE:   case DSTORE:   case ASTORE:
+                locals[pc+1][i1].merge(pop()); return null;
+            case ISTORE_0: case LSTORE_0: case FSTORE_0: case DSTORE_0: case ASTORE_0:
+                locals[pc+1][0].merge(pop()); return null;
+            case ISTORE_1: case LSTORE_1: case FSTORE_1: case DSTORE_1: case ASTORE_1:
+                locals[pc+1][1].merge(pop()); return null;
+            case ASTORE_2: case DSTORE_2: case FSTORE_2: case LSTORE_2: case ISTORE_2:
+                locals[pc+1][2].merge(pop()); return null;
+            case ISTORE_3: case LSTORE_3: case FSTORE_3: case DSTORE_3: case ASTORE_3:
+                locals[pc+1][3].merge(pop()); return null;
             case POP:                                                                  pop();                    return null;
             case POP2:                                                                 pop(); pop();             return null;
-            case DUP:                                                                  push(stack[sp-1]);        return null;
-            case DUP2:                                                     push(stack[sp-2]); push(stack[sp-2]); return null;
+            case DUP:   push(stacks[pc][sps[pc]-1]);                  return null;
+            case DUP2:  push(stacks[pc][sps[pc]-2]); push(stacks[pc][sps[pc]-1]); return null;
 
                 // Conversions //////////////////////////////////////////////////////////////////////////////
 
@@ -526,7 +596,7 @@ public class JSSA extends MethodGen implements CGConst {
             case IAND: case LAND:                       push(new And(pop(), pop()));  return null;
             case IOR:  case LOR:                        push(new Or(pop(), pop()));   return null;
             case IXOR: case LXOR:                       push(new Xor(pop(), pop()));  return null;
-            case IINC:                                  return local[i1] = new Add(local[i1], new Constant(i2));
+            case IINC:                                  return locals[pc+1][i1] = phi(new Add(locals[pc][i1], new Constant(i2)));
 
                 // Control and branching //////////////////////////////////////////////////////////////////////////////
 
@@ -671,20 +741,6 @@ public class JSSA extends MethodGen implements CGConst {
     
     private Map bindingMap;
     private int nextVar;
-    String exprToString(Expr e) {
-        if (e instanceof Constant) return e._toString();
-        String s = (String)bindingMap.get(e);
-        if (s != null) return s;
-        String prefix;
-        if (e.getType() == Type.VOID) return e._toString();
-        else if (e.getType() == Type.DOUBLE || e.getType() == Type.FLOAT) prefix = "f";
-        else if (e.getType().isPrimitive()) prefix = "i";
-        else if (e.getType().isArray()) prefix = "a";
-        else prefix = "o";
-        s = prefix + (nextVar++);
-        bindingMap.put(e,s);
-        return "(" + s + " = " + e._toString() + ")";
-    }
     
     public static void main(String[] args) throws Exception {
         InputStream is = Class.forName(args[0]).getClassLoader().getResourceAsStream(args[0].replace('.', '/')+".class");

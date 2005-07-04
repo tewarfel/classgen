@@ -53,15 +53,15 @@ public class JSSA extends MethodGen implements CGConst {
     private int sp = 0;
     
     private Expr push(Expr e) {
-        if(sp == stack.length) {
+        if (sp == stack.length) {
             for(int i=0;i<stack.length;i++) System.err.println("Stack " + i + ": " + stack[i]);
             throw new IllegalStateException("stack overflow (" + stack.length + ")");
         }
-        if(e.getType() == Type.VOID) throw new IllegalArgumentException("can't push a void");
+        if (e.getType() == Type.VOID) throw new IllegalArgumentException("can't push a void");
         return stack[sp++] = e;
     }
     private Expr pop() {
-        if(sp == 0) throw new IllegalStateException("stack underflow");
+        if (sp == 0) throw new IllegalStateException("stack underflow");
         return stack[--sp];
     }
     
@@ -147,7 +147,7 @@ public class JSSA extends MethodGen implements CGConst {
     public class Not extends Expr {
         public final Expr e;
         public Not(Expr e) {
-            if(e.getType() != Type.BOOLEAN) throw new IllegalArgumentException("not needs a boolean expression");
+            if (e.getType() != Type.BOOLEAN) throw new IllegalArgumentException("not needs a boolean expression");
             this.e = e;
         }
         public Type getType() { return Type.BOOLEAN; }
@@ -157,7 +157,7 @@ public class JSSA extends MethodGen implements CGConst {
     public class Neg extends Expr {
         public final Expr e;
         public Neg(Expr e) {
-            if(!e.getType().isPrimitive()) throw new IllegalArgumentException("can only negate a primitive");
+            if (!e.getType().isPrimitive()) throw new IllegalArgumentException("can only negate a primitive");
             this.e = e;
         }
         public Type getType() { return e.getType(); }
@@ -185,9 +185,9 @@ public class JSSA extends MethodGen implements CGConst {
     public class Eq extends Comparison {
         public Eq(Expr e1, Expr e2) {
             super(e1, e2, "=="); 
-            if(e1.getType().isPrimitive() != e2.getType().isPrimitive())
+            if (e1.getType().isPrimitive() != e2.getType().isPrimitive())
                 throw new IllegalArgumentException("type mismatch");
-            if(e1.getType().isPrimitive() && e1.getType() != e2.getType())
+            if (e1.getType().isPrimitive() && e1.getType() != e2.getType())
                 throw new IllegalArgumentException("type mismatch");            
             // FEATURE: Check if we can compare these classes
         }
@@ -197,7 +197,7 @@ public class JSSA extends MethodGen implements CGConst {
     public class PrimitiveComparison extends Comparison {
         public PrimitiveComparison(Expr e1, Expr e2, String show) {
             super(e1, e2, show);
-            if(!e1.getType().isPrimitive() || e1.getType() != e2.getType()) throw new IllegalArgumentException("type mismatch");
+            if (!e1.getType().isPrimitive() || e1.getType() != e2.getType()) throw new IllegalArgumentException("type mismatch");
         }
     }
     
@@ -211,7 +211,7 @@ public class JSSA extends MethodGen implements CGConst {
     public class BinMath extends BinExpr {
         public BinMath(Expr e1, Expr e2, String show) {
             super(e2, e1, show); 
-            if(e1.getType() != e2.getType()) throw new IllegalArgumentException("types disagree");
+            if (e1.getType() != e2.getType()) throw new IllegalArgumentException("types disagree");
         }
         public Type getType() { return e1.getType(); }
     }
@@ -229,8 +229,8 @@ public class JSSA extends MethodGen implements CGConst {
         public BitShiftExpr(Expr e1, Expr e2, String show) {
             super(e1,e2,show);
             Type t = e1.getType();
-            if(t != Type.INT && t != Type.LONG) throw new IllegalArgumentException("type mismatch");
-            if(e2.getType() != Type.INT) throw new IllegalArgumentException("type mismatch");
+            if (t != Type.INT && t != Type.LONG) throw new IllegalArgumentException("type mismatch");
+            if (e2.getType() != Type.INT) throw new IllegalArgumentException("type mismatch");
         }
         public Type getType() { return e1.getType(); }
     }
@@ -244,7 +244,7 @@ public class JSSA extends MethodGen implements CGConst {
         final Expr e;
         final Type t;
         public Cast(Expr e, Type t) {
-            if(e.getType().isRef() != t.isRef()) throw new IllegalArgumentException("invalid cast");
+            if (e.getType().isRef() != t.isRef()) throw new IllegalArgumentException("invalid cast");
             // FEATURE: Check that one is a subclass of the other if it is a ref
             this.e = e;
             this.t = t; 
@@ -256,7 +256,7 @@ public class JSSA extends MethodGen implements CGConst {
         final Expr e;
         final Type.Ref t;
         public InstanceOf(Expr e, Type.Ref t) {
-            if(!e.getType().isRef()) throw new IllegalArgumentException("can't do an instanceof check on a non-ref");
+            if (!e.getType().isRef()) throw new IllegalArgumentException("can't do an instanceof check on a non-ref");
             this.e = e; 
             this.t = t; 
         }
@@ -266,7 +266,7 @@ public class JSSA extends MethodGen implements CGConst {
     public class Throw extends Op {
         public final Expr e;
         public Throw(Expr e) {
-            if(!e.getType().isRef()) throw new IllegalArgumentException("can't throw a non ref");
+            if (!e.getType().isRef()) throw new IllegalArgumentException("can't throw a non ref");
             // FEATURE: CHeck that it is a subclass of Throwable
             this.e = e; 
         }
@@ -323,7 +323,7 @@ public class JSSA extends MethodGen implements CGConst {
         public Return() { this(VOID_EXPR); }
         public Return(Expr e) {
             this.e = e; 
-            if(Type.unify(method.getReturnType(),e.getType()) != method.getReturnType())
+            if (Type.unify(method.getReturnType(),e.getType()) != method.getReturnType())
                throw new IllegalArgumentException("type mismatch");
         }
         public String toString() { return e.getType() == Type.VOID ? "return" : ("return "+e.toString()); }
@@ -572,7 +572,7 @@ public class JSSA extends MethodGen implements CGConst {
                     case INVOKESTATIC:    ret = new InvokeStatic(method, args); break;
                     default: throw new Error("should never happen");
                 }
-                if(ret.getType() != Type.VOID) push(ret);
+                if (ret.getType() != Type.VOID) push(ret);
                 return new Seq(ret);
             }
 
@@ -681,14 +681,14 @@ public class JSSA extends MethodGen implements CGConst {
     private Map bindingMap;
     private int nextVar;
     String exprToString(Expr e) {
-        if(e instanceof Constant) return e._toString();
+        if (e instanceof Constant) return e._toString();
         String s = (String)bindingMap.get(e);
-        if(s != null) return s;
+        if (s != null) return s;
         String prefix;
-        if(e.getType() == Type.VOID) return e._toString();
-        else if(e.getType() == Type.DOUBLE || e.getType() == Type.FLOAT) prefix = "f";
-        else if(e.getType().isPrimitive()) prefix = "i";
-        else if(e.getType().isArray()) prefix = "a";
+        if (e.getType() == Type.VOID) return e._toString();
+        else if (e.getType() == Type.DOUBLE || e.getType() == Type.FLOAT) prefix = "f";
+        else if (e.getType().isPrimitive()) prefix = "i";
+        else if (e.getType().isArray()) prefix = "a";
         else prefix = "o";
         s = prefix + (nextVar++);
         bindingMap.put(e,s);

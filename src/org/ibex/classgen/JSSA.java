@@ -52,7 +52,7 @@ public class JSSA extends MethodGen implements CGConst {
             for(int i=0; i<sp; i++) stacks[newPC][i] = new Phi();
         }
         if (stacks[newPC].length != sp) throw new IllegalArgumentException("stack depth disagreement");
-        for(int i=0; i<stacks[newPC].length; i++) stacks[pc][i].merge(stack[i]);
+        for(int i=0; i<stacks[newPC].length; i++) stacks[newPC][i].merge(stack[i]);
     }
     
     private Object[] ops = new Object[65535];
@@ -74,7 +74,7 @@ public class JSSA extends MethodGen implements CGConst {
 
     private void push(Expr e) {
         if (e.getType() == Type.VOID) throw new IllegalArgumentException("can't push a void");
-        if (stack[sp+1] == null) stack[sp+1] = new Phi();
+        if (stack[sp] == null) stack[sp] = new Phi();
         stack[sp++].merge(e);
     }
     private Expr pop() {

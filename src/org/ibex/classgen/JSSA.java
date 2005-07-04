@@ -109,7 +109,7 @@ public class JSSA extends MethodGen implements CGConst {
         public abstract Type getType();
         
         public final String toString() { return exprToString(this); }
-        public String _toString() { return super.toString(); } // Adam is going to hate me for this
+        public String _toString() { return super.toString(); } // Adam is going to hate me for this (yes; why is this here?)
     }
 
     /**

@@ -13,38 +13,46 @@ public class JSSA extends MethodGen implements CGConst {
     
     public JSSA(Type.Class c, DataInput in, ConstantPool cp) throws IOException {
         super(c, in, cp);
-        locals = new Phi[size()][maxLocals];
-        stacks = new Phi[size()][maxStack];
-        sps    = new int [size()];
-        sps[0] = 0;
-        int n=0;
-        locals[0] = new Phi[maxLocals];
-        if (!isStatic())
-            locals[0][n++] = phi(new Argument("this",method.getDeclaringClass()));
-        for(int i=0;i<this.method.getNumArgs(); i++)
-            locals[0][n++] = phi(new Argument("arg"+i, this.method.getArgType(i)));
+        sp = 0;
+        stacks = new Phi[size()][];
+        locals = new Phi[size()][];
+        for(int i=0; i<size(); i++) {
+            int n = 0;
+            locals[i] = new Phi[maxLocals];
+            for(int j=0; j<locals[i].length; j++) locals[i][j] = new Phi();
+            if (i==0) {
+                if (!isStatic()) locals[i][n++].merge(new Argument("this",method.getDeclaringClass()));
+                for(int j=0;j<this.method.getNumArgs(); j++) locals[i][n++].merge(new Argument("arg"+j,this.method.getArgType(j)));
+            }
+        }
+
+        stack = new Phi[maxStack];
+        branchTo(0);
         for(pc=0; pc<size(); pc++) {
             int    op  = get(pc);
             Object arg = getArg(pc);
             try {
-                if (pc<size()-1) {
-                    locals[pc+1] = new Phi[maxLocals];
-                    for(int j=0; j<maxLocals; j++) locals[pc+1][j] = locals[pc][j];
-                    sps[pc+1] = sps[pc];
-                    stacks[pc+1] = new Phi[maxStack];
-                    for(int j=0; j<sps[pc]; j++) stacks[pc+1][j] = stacks[pc][j];
-                }
                 Object o = addOp(op, arg);
                 if (o != null) {
                     ops[numOps] = o;
                     ofs[numOps++] = pc;
                 }
+                if (o==null || (!(o instanceof Branch))) branchTo(pc+1);
             } catch(RuntimeException e) {
                 System.err.println("Had a problem at PC: " + pc + " of " + method);
                 e.printStackTrace();
                 throw new IOException("invalid class file");
             }
         }
+    }
+
+    public void branchTo(int newPC) {
+        if (stacks[newPC] == null) {
+            stacks[newPC] = new Phi[sp];
+            for(int i=0; i<sp; i++) stacks[newPC][i] = new Phi();
+        }
+        if (stacks[newPC].length != sp) throw new IllegalArgumentException("stack depth disagreement");
+        for(int i=0; i<stacks[newPC].length; i++) stacks[pc][i].merge(stack[i]);
     }
     
     private Object[] ops = new Object[65535];
@@ -58,28 +66,21 @@ public class JSSA extends MethodGen implements CGConst {
     
     /** this models the JVM stack; it is only used for unwinding stack-ops into an SSA-tree, then thrown away */
     private final Phi[][] stacks;
+    private final Phi[] stack;
 
     /** JVM stack pointer */
-    private final int sps[];
     private int pc = 0;
+    private int sp = 0;
 
-    private Expr push(Expr e) {
-        // FIXME: need to verify that stacks are same size at target of branch
-        if (sps[pc+1] == maxStack) {
-            for(int i=0;i<maxStack;i++) System.err.println("Stack " + i + ": " + stacks[pc][i]);
-            throw new IllegalStateException("stack overflow (" + maxStack + ")");
-        }
+    private void push(Expr e) {
         if (e.getType() == Type.VOID) throw new IllegalArgumentException("can't push a void");
-        stacks[pc+1][sps[pc+1]++].merge(e);
-        return stacks[pc+1][sps[pc+1]++];
+        if (stack[sp+1] == null) stack[sp+1] = new Phi();
+        stack[sp++].merge(e);
     }
     private Expr pop() {
-        // FIXME: need to verify that stacks are same size at target of branch
-        if (pc == sps.length-1) { /* FIXME? */ return stacks[pc][sps[pc]-1]; }
-        if (sps[pc+1] == 0) throw new IllegalStateException("stack underflow");
-        sps[pc+1]--;
-        Expr ret = stacks[pc+1][sps[pc+1]];
-        stacks[pc+1][sps[pc+1]] = null;
+        Expr ret = stack[sp-1];
+        stack[sp-1] = null;
+        sp--;
         return ret;
     }
     
@@ -156,6 +157,7 @@ public class JSSA extends MethodGen implements CGConst {
     public class Phi extends Expr {
         Expr[] inputs;
         public Phi(Expr[] inputs) { this.inputs = inputs; }
+        public Phi() { this.inputs = new Expr[0]; }
         public Phi(Expr e1) {
             this.inputs = new Expr[1];
             inputs[0] = e1;
@@ -330,7 +332,27 @@ public class JSSA extends MethodGen implements CGConst {
         public Type getType() { return Type.BOOLEAN; }
     }
 
-    public class Throw extends Op {
+    public class Branch extends Op {
+        Expr destination = null;
+        Expr condition = null;
+        public Branch(Expr condition, Expr destination) { this(destination); this.condition = condition; }
+        public Branch(Expr destination) { this.destination = destination; }
+        public Branch(MethodGen.Switch s) { /* FIXME */ }
+        public Branch() { }
+        public void branchTo() { branchTo(destination); }
+        private void branchTo(Expr e) {
+            if (condition != null) JSSA.this.branchTo(pc+1);
+            if (e instanceof Phi) {
+                Phi phi = (Phi)e;
+                for(int i=0; i<phi.inputs.length; i++) branchTo(phi.inputs[i]);
+            } else if (e instanceof Label) {
+                JSSA.this.branchTo(((Label)e).pc);
+            } else {
+                throw new IllegalArgumentException("can't branch to a " + e.getClass());
+            }
+        }
+    }
+    public class Throw extends Branch {
         public final Expr e;
         public Throw(Expr e) {
             if (!e.getType().isRef()) throw new IllegalArgumentException("can't throw a non ref");
@@ -338,12 +360,15 @@ public class JSSA extends MethodGen implements CGConst {
             this.e = e; 
         }
     }
-
-    public class Branch extends Op {
-        public Branch(Expr condition, Object destination) { }
-        public Branch(Label destination) { }
-        public Branch(MethodGen.Switch s) { }
-        public Branch() { }
+    public class Return extends Branch {
+        final Expr e;
+        public Return() { this(VOID_EXPR); }
+        public Return(Expr e) {
+            this.e = e; 
+            if (Type.unify(method.getReturnType(),e.getType()) != method.getReturnType())
+               throw new IllegalArgumentException("type mismatch");
+        }
+        public String toString() { return e.getType() == Type.VOID ? "return" : ("return "+e.toString()); }
     }
     public class Goto extends Branch { }
     public class RET extends Branch { }
@@ -352,10 +377,9 @@ public class JSSA extends MethodGen implements CGConst {
 
     /** represents a "returnaddr" pushed onto the stack */
     public class Label extends Expr {
-        public final Op op;
+        public int pc;
+        public Label(int i) { this.pc = pc; }
         public Type getType() { throw new Error("attempted to call getType() on a Label"); }
-        public Label(Op op) { this.op = op; }
-        public Label(int i) { this.op = null; /* FIXME */ }
     }
 
     public class New extends Expr {
@@ -385,17 +409,6 @@ public class JSSA extends MethodGen implements CGConst {
         }
     }
     
-    public class Return extends Op {
-        final Expr e;
-        public Return() { this(VOID_EXPR); }
-        public Return(Expr e) {
-            this.e = e; 
-            if (Type.unify(method.getReturnType(),e.getType()) != method.getReturnType())
-               throw new IllegalArgumentException("type mismatch");
-        }
-        public String toString() { return e.getType() == Type.VOID ? "return" : ("return "+e.toString()); }
-    }
-
     /** GETFIELD and GETSTATIC */
     public class Get extends Expr {
         final Type.Class.Field f;
@@ -534,6 +547,7 @@ public class JSSA extends MethodGen implements CGConst {
             i1 = p.i1;
             i2 = p.i2;
         }
+        Label label = (arg instanceof Label) ? (Label)arg : null;
         switch(op) {
 
             case NOP: return null;
@@ -565,8 +579,8 @@ public class JSSA extends MethodGen implements CGConst {
                 locals[pc+1][3].merge(pop()); return null;
             case POP:                                                                  pop();                    return null;
             case POP2:                                                                 pop(); pop();             return null;
-            case DUP:   push(stacks[pc][sps[pc]-1]);                  return null;
-            case DUP2:  push(stacks[pc][sps[pc]-2]); push(stacks[pc][sps[pc]-1]); return null;
+            case DUP:   push(stack[sp-1]);                  return null;
+            case DUP2:  push(stack[sp-2]); push(stack[sp-1]); return null;
 
                 // Conversions //////////////////////////////////////////////////////////////////////////////
 
@@ -602,25 +616,25 @@ public class JSSA extends MethodGen implements CGConst {
 
             case IFNULL:                                return new Branch(new Eq(pop(), new Constant(null)), new Label(i1));
             case IFNONNULL:                             return new Branch(new Not(new Eq(pop(),new Constant(null))),new Label(i1));
-            case IFEQ:                                  return new Branch(    new Eq(new Constant(0), pop()),  arg);
-            case IFNE:                                  return new Branch(new Not(new Eq(new Constant(0), pop())), arg);
-            case IFLT:                                  return new Branch(    new Lt(new Constant(0), pop()),  arg);
-            case IFGE:                                  return new Branch(new Not(new Lt(new Constant(0), pop())), arg);
-            case IFGT:                                  return new Branch(    new Gt(new Constant(0), pop()),  arg);
-            case IFLE:                                  return new Branch(new Not(new Gt(new Constant(0), pop())), arg);
-            case IF_ICMPEQ:                             return new Branch(    new Eq(pop(), pop()),  arg);
-            case IF_ICMPNE:                             return new Branch(new Not(new Eq(pop(), pop())), arg);
-            case IF_ICMPLT:                             return new Branch(    new Lt(pop(), pop()),  arg);
-            case IF_ICMPGE:                             return new Branch(new Not(new Lt(pop(), pop())), arg);
-            case IF_ICMPGT:                             return new Branch(    new Gt(pop(), pop()),  arg);
-            case IF_ICMPLE:                             return new Branch(new Not(new Gt(pop(), pop())), arg);
-            case IF_ACMPEQ:                             return new Branch(    new Eq(pop(), pop()),  arg);
-            case IF_ACMPNE:                             return new Branch(new Not(new Eq(pop(), pop())), arg);
-            case ATHROW:                                return new Throw(pop());
-            case GOTO:                                  return new Branch(new Label(i1));
-            case JSR:                                   return new JSR(new Label(i1));
-            case RET:                                   return new RET();
-            case RETURN:                                return new Return();
+            case IFEQ:                                  return new Branch(    new Eq(new Constant(0), pop()), label);
+            case IFNE:                                  return new Branch(new Not(new Eq(new Constant(0), pop())), label);
+            case IFLT:                                  return new Branch(    new Lt(new Constant(0), pop()), label);
+            case IFGE:                                  return new Branch(new Not(new Lt(new Constant(0), pop())), label);
+            case IFGT:                                  return new Branch(    new Gt(new Constant(0), pop()), label);
+            case IFLE:                                  return new Branch(new Not(new Gt(new Constant(0), pop())), label);
+            case IF_ICMPEQ:                             return new Branch(    new Eq(pop(), pop()), label);
+            case IF_ICMPNE:                             return new Branch(new Not(new Eq(pop(), pop())), label);
+            case IF_ICMPLT:                             return new Branch(    new Lt(pop(), pop()), label);
+            case IF_ICMPGE:                             return new Branch(new Not(new Lt(pop(), pop())), label);
+            case IF_ICMPGT:                             return new Branch(    new Gt(pop(), pop()),  label);
+            case IF_ICMPLE:                             return new Branch(new Not(new Gt(pop(), pop())), label);
+            case IF_ACMPEQ:                             return new Branch(    new Eq(pop(), pop()), label);
+            case IF_ACMPNE:                             return new Branch(new Not(new Eq(pop(), pop())), label);
+            case ATHROW:                                                       return new Throw(pop());
+            case GOTO:                                                         return new Branch(locals[pc][i1]);
+            case JSR:                                   push(new Label(pc+3)); return new JSR(new Label(pc+i1));
+            case RET:                                                          return new RET();
+            case RETURN:                                                       return new Return();
             case IRETURN: case LRETURN: case FRETURN: case DRETURN: case ARETURN:
                 return new Return(pop());
 

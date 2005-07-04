@@ -63,6 +63,20 @@ public abstract class Type implements CGConst {
         // it probably should be in Context.java
         return null;
     }
+
+    public static Type fromArraySpec(int i) {
+        switch(i) {
+            case 4: return Type.BOOLEAN;
+            case 5: return Type.CHAR;
+            case 6: return Type.FLOAT;
+            case 7: return Type.DOUBLE;
+            case 8: return Type.BYTE;
+            case 9: return Type.SHORT;
+            case 10: return Type.INT;
+            case 11: return Type.LONG;
+            default: throw new IllegalStateException("invalid array type");
+        }
+    }
     
     // Protected/Private //////////////////////////////////////////////////////////////////////////////
 

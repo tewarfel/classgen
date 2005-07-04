@@ -206,6 +206,7 @@ public class JSSA extends MethodGen implements CGConst {
     public class Ge extends PrimitiveComparison { public Ge(Expr e1, Expr e2) { super(e1, e2, ">="); } }
     public class Le extends PrimitiveComparison { public Le(Expr e1, Expr e2) { super(e1, e2, "<="); } }
     
+
     // Math Operations //////////////////////////////////////////////////////////////////////////////
 
     public class BinMath extends BinExpr {
@@ -237,6 +238,7 @@ public class JSSA extends MethodGen implements CGConst {
     public class Shl  extends BitShiftExpr { public  Shl(Expr e, Expr e2) { super(e, e2, "<<"); } }
     public class Shr  extends BitShiftExpr { public  Shr(Expr e, Expr e2) { super(e, e2, ">>"); } }
     public class Ushr extends BitShiftExpr { public Ushr(Expr e, Expr e2) { super(e, e2, ">>>"); } }
+
 
     // Other operations //////////////////////////////////////////////////////////////////////////////
 
@@ -409,9 +411,12 @@ public class JSSA extends MethodGen implements CGConst {
     public class InvokeStatic    extends Invoke  { public InvokeStatic(Type.Class.Method m, Expr[] a) { super(m,a); } }
     public class InvokeSpecial   extends InvokeVirtual {
         public InvokeSpecial(Type.Class.Method m, Expr[] a, Expr e) { super(m,a,e); }
-        public String _toString() { return _toString(method.name.equals("<init>") ? method.getDeclaringClass().getName() : method.name); }
+        public String _toString() { return _toString(method.name.equals("<init>")
+                                                     ? method.getDeclaringClass().getName()
+                                                     : method.name); }
     }
-    public class InvokeInterface extends InvokeVirtual{public InvokeInterface(Type.Class.Method m, Expr[] a, Expr e){super(m,a,e);}}
+    public class InvokeInterface extends InvokeVirtual{
+        public InvokeInterface(Type.Class.Method m, Expr[] a, Expr e) { super(m,a,e); } }
     public class InvokeVirtual   extends Invoke  {
         public final Expr instance;
         public InvokeVirtual(Type.Class.Method m, Expr[] a, Expr e) { super(m, a); instance = e; }
@@ -470,28 +475,28 @@ public class JSSA extends MethodGen implements CGConst {
 
                 // Stack manipulations //////////////////////////////////////////////////////////////////////////////
 
-            case ACONST_NULL:                                                      push(new Constant(null)); return null;
-            case ICONST_M1:                                                        push(new Constant(-1)); return null;
-            case ICONST_0: case LCONST_0: case FCONST_0: case DCONST_0:            push(new Constant(0)); return null;
-            case ICONST_1: case LCONST_1: case FCONST_1: case DCONST_1:            push(new Constant(1)); return null;
-            case ICONST_2: case FCONST_2:                                          push(new Constant(2)); return null;
-            case ICONST_3:                                                         push(new Constant(3)); return null;
-            case ICONST_4:                                                         push(new Constant(4)); return null;
-            case ICONST_5:                                                         push(new Constant(5)); return null;
-            case ILOAD:    case LLOAD:    case FLOAD:    case DLOAD:    case ALOAD:    push(local[i1]); return null;
-            case ILOAD_0:  case LLOAD_0:  case FLOAD_0:  case DLOAD_0:  case ALOAD_0:  push(local[0]); return null;
-            case ILOAD_1:  case LLOAD_1:  case FLOAD_1:  case DLOAD_1:  case ALOAD_1:  push(local[1]); return null;
-            case ALOAD_2:  case DLOAD_2:  case FLOAD_2:  case LLOAD_2:  case ILOAD_2:  push(local[2]); return null;
-            case ILOAD_3:  case LLOAD_3:  case FLOAD_3:  case DLOAD_3:  case ALOAD_3:  push(local[3]); return null;
-            case ISTORE:   case LSTORE:   case FSTORE:   case DSTORE:   case ASTORE:   local[i1] = pop(); return null;
-            case ISTORE_0: case LSTORE_0: case FSTORE_0: case DSTORE_0: case ASTORE_0: local[0]  = pop(); return null;
-            case ISTORE_1: case LSTORE_1: case FSTORE_1: case DSTORE_1: case ASTORE_1: local[1]  = pop(); return null;
-            case ASTORE_2: case DSTORE_2: case FSTORE_2: case LSTORE_2: case ISTORE_2: local[2]  = pop(); return null;
-            case ISTORE_3: case LSTORE_3: case FSTORE_3: case DSTORE_3: case ASTORE_3: local[3]  = pop(); return null;
-            case POP:      pop(); return null;
-            case POP2:     pop(); pop(); return null;
-            case DUP:      push(stack[sp-1]); return null;
-            case DUP2:     push(stack[sp-2]); push(stack[sp-2]); return null;
+            case ACONST_NULL:                                                          push(new Constant(null)); return null;
+            case ICONST_M1:                                                            push(new Constant(-1));   return null;
+            case ICONST_0: case LCONST_0: case FCONST_0: case DCONST_0:                push(new Constant(0));    return null;
+            case ICONST_1: case LCONST_1: case FCONST_1: case DCONST_1:                push(new Constant(1));    return null;
+            case ICONST_2: case FCONST_2:                                              push(new Constant(2));    return null;
+            case ICONST_3:                                                             push(new Constant(3));    return null;
+            case ICONST_4:                                                             push(new Constant(4));    return null;
+            case ICONST_5:                                                             push(new Constant(5));    return null;
+            case ILOAD:    case LLOAD:    case FLOAD:    case DLOAD:    case ALOAD:    push(local[i1]);          return null;
+            case ILOAD_0:  case LLOAD_0:  case FLOAD_0:  case DLOAD_0:  case ALOAD_0:  push(local[0]);           return null;
+            case ILOAD_1:  case LLOAD_1:  case FLOAD_1:  case DLOAD_1:  case ALOAD_1:  push(local[1]);           return null;
+            case ALOAD_2:  case DLOAD_2:  case FLOAD_2:  case LLOAD_2:  case ILOAD_2:  push(local[2]);           return null;
+            case ILOAD_3:  case LLOAD_3:  case FLOAD_3:  case DLOAD_3:  case ALOAD_3:  push(local[3]);           return null;
+            case ISTORE:   case LSTORE:   case FSTORE:   case DSTORE:   case ASTORE:   local[i1] = pop();        return null;
+            case ISTORE_0: case LSTORE_0: case FSTORE_0: case DSTORE_0: case ASTORE_0: local[0]  = pop();        return null;
+            case ISTORE_1: case LSTORE_1: case FSTORE_1: case DSTORE_1: case ASTORE_1: local[1]  = pop();        return null;
+            case ASTORE_2: case DSTORE_2: case FSTORE_2: case LSTORE_2: case ISTORE_2: local[2]  = pop();        return null;
+            case ISTORE_3: case LSTORE_3: case FSTORE_3: case DSTORE_3: case ASTORE_3: local[3]  = pop();        return null;
+            case POP:                                                                  pop();                    return null;
+            case POP2:                                                                 pop(); pop();             return null;
+            case DUP:                                                                  push(stack[sp-1]);        return null;
+            case DUP2:                                                     push(stack[sp-2]); push(stack[sp-2]); return null;
 
                 // Conversions //////////////////////////////////////////////////////////////////////////////
 
@@ -509,18 +514,18 @@ public class JSSA extends MethodGen implements CGConst {
 
                 // Math //////////////////////////////////////////////////////////////////////////////
                    
-            case IADD: case LADD: case FADD: case DADD: push(new Add(pop(), pop())); return null;
-            case ISUB: case LSUB: case FSUB: case DSUB: push(new Sub(pop(), pop())); return null;
-            case IMUL: case LMUL: case FMUL: case DMUL: push(new Mul(pop(), pop())); return null;
-            case IREM: case LREM: case FREM: case DREM: push(new Rem(pop(), pop())); return null;
-                //case INEG: case LNEG: case FNEG: case DNEG: push(new Neg(pop())); return null;
-            case IDIV: case LDIV: case FDIV: case DDIV: push(new Div(pop(), pop())); return null;
-            case ISHL: case LSHL:                       push(new Shl(pop(), pop())); return null;
-            case ISHR: case LSHR:                       push(new Shr(pop(), pop())); return null;
+            case IADD: case LADD: case FADD: case DADD: push(new Add(pop(), pop()));  return null;
+            case ISUB: case LSUB: case FSUB: case DSUB: push(new Sub(pop(), pop()));  return null;
+            case IMUL: case LMUL: case FMUL: case DMUL: push(new Mul(pop(), pop()));  return null;
+            case IREM: case LREM: case FREM: case DREM: push(new Rem(pop(), pop()));  return null;
+            case INEG: case LNEG: case FNEG: case DNEG: push(new Neg(pop()));         return null;
+            case IDIV: case LDIV: case FDIV: case DDIV: push(new Div(pop(), pop()));  return null;
+            case ISHL: case LSHL:                       push(new Shl(pop(), pop()));  return null;
+            case ISHR: case LSHR:                       push(new Shr(pop(), pop()));  return null;
             case IUSHR: case LUSHR:                     push(new Ushr(pop(), pop())); return null;
-            case IAND: case LAND:                       push(new And(pop(), pop())); return null;
-            case IOR:  case LOR:                        push(new Or(pop(), pop())); return null;
-            case IXOR: case LXOR:                       push(new Xor(pop(), pop())); return null;
+            case IAND: case LAND:                       push(new And(pop(), pop()));  return null;
+            case IOR:  case LOR:                        push(new Or(pop(), pop()));   return null;
+            case IXOR: case LXOR:                       push(new Xor(pop(), pop()));  return null;
             case IINC:                                  return local[i1] = new Add(local[i1], new Constant(i2));
 
                 // Control and branching //////////////////////////////////////////////////////////////////////////////
@@ -586,21 +591,7 @@ public class JSSA extends MethodGen implements CGConst {
                 // Allocation //////////////////////////////////////////////////////////////////////////////
 
             case NEW:               push(new New((Type.Class)arg)); return null;
-            case NEWARRAY: {
-                Type base;
-                switch(((Integer)arg).intValue()) {
-                    case 4: base = Type.BOOLEAN; break;
-                    case 5: base = Type.CHAR; break;
-                    case 6: base = Type.FLOAT; break;
-                    case 7: base = Type.DOUBLE; break;
-                    case 8: base = Type.BYTE; break;
-                    case 9: base = Type.SHORT; break;
-                    case 10: base = Type.INT; break;
-                    case 11: base = Type.LONG; break;
-                    default: throw new IllegalStateException("invalid array type");
-                }
-                return seqPush(new NewArray(base.makeArray(),pop()));
-            }
+            case NEWARRAY:          return seqPush(new NewArray(Type.fromArraySpec(((Integer)arg).intValue()).makeArray(), pop()));
             case ANEWARRAY:         push(new NewArray(((Type.Ref)arg).makeArray(), pop())); return null;
             case MULTIANEWARRAY: {
                 MethodGen.MultiANewArray mana = (MethodGen.MultiANewArray) arg;
@@ -623,7 +614,7 @@ public class JSSA extends MethodGen implements CGConst {
             case TABLESWITCH:    return new Branch((MethodGen.Switch)arg);
             case LOOKUPSWITCH:   return new Branch((MethodGen.Switch)arg);
 
-                /*
+                /* FIXME
             case MONITORENTER:   Op.monitorEnter(pop());
             case MONITOREXIT:    Op.monitorExit(pop());
                 */

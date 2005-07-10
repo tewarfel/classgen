@@ -16,5 +16,6 @@ public class Context {
     public void add(ClassFile cf) { cache.put(cf.getType().getName(), cf); }
     public Collection enumerateClassFiles() { return cache.values(); }
     public ClassFile resolve(String classname) { return (ClassFile)cache.get(classname); }
+    public ClassFile resolve(Type.Class c) { return (ClassFile)cache.get(c.getName()); }
 
 }

@@ -10,14 +10,14 @@ public abstract class Type implements CGConst {
     // Public API //////////////////////////////////////////////////////////////////////////////
 
     public static final Type VOID = new Primitive("V", "void");
-    public static final Type INT = new Primitive("I", "int");
-    public static final Type LONG = new Primitive("J", "long");
-    public static final Type BOOLEAN = new Primitive("Z", "boolean");
-    public static final Type DOUBLE = new Primitive("D", "double");
-    public static final Type FLOAT = new Primitive("F", "float");
-    public static final Type BYTE = new Primitive("B", "byte");
-    public static final Type CHAR = new Primitive("C", "char");
-    public static final Type SHORT = new Primitive("S", "short");
+    public static final Type INT = new Primitive("I", "int", 10);
+    public static final Type LONG = new Primitive("J", "long", 11);
+    public static final Type BOOLEAN = new Primitive("Z", "boolean", 4);
+    public static final Type DOUBLE = new Primitive("D", "double", 7);
+    public static final Type FLOAT = new Primitive("F", "float", 6);
+    public static final Type BYTE = new Primitive("B", "byte", 8);
+    public static final Type CHAR = new Primitive("C", "char", 5);
+    public static final Type SHORT = new Primitive("S", "short", 9);
     public static final Type NULL = new Null();
     
     public static final Type.Class OBJECT = Type.Class.instance("java.lang.Object");
@@ -93,12 +93,19 @@ public abstract class Type implements CGConst {
 
     public static class Primitive extends Type {
         private String humanReadable;
-        Primitive(String descriptor, String humanReadable) {
+        private int arraySpec;
+        Primitive(String descriptor, String humanReadable) { this(descriptor, humanReadable, -1); }
+        Primitive(String descriptor, String humanReadable, int arraySpec) {
             super(descriptor);
             this.humanReadable = humanReadable;
+            this.arraySpec = arraySpec;
         }
         public String toString() { return humanReadable; }
         public boolean     isPrimitive() { return true; }
+        public int toArraySpec() {
+            if (arraySpec < 0) throw new Error("you can't make arrays of " + this);
+            return arraySpec;
+        }
     }
     
     public abstract static class Ref extends Type {

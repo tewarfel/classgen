@@ -842,7 +842,9 @@ public class MethodGen extends Type.Class.Method.Body {
                     } else if (argLength == 7) {
                         throw new Error("should never happen - variable length instruction not explicitly handled");
                     } else {
-                        int iarg  = ((Integer)arg).intValue();
+                        int iarg  = (arg instanceof Type.Primitive)
+                            ? ((Type.Primitive)arg).toArraySpec()
+                            : ((Integer)arg).intValue();
                         if (argLength == 1) {
                             if ((opdata & OP_UNSIGNED_FLAG) != 0 ? iarg >= 256 : (iarg < -128 || iarg >= 128))
                                 throw new ClassFile.Exn("overflow of s/u1 option");

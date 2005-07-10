@@ -53,76 +53,65 @@ public class Arena implements CGConst {
 
         System.out.println("**** " + c.getName() + " is a gladiator!");
 
-        Type.Class             arena         = getArenaForGladiator(c);
-        Type.Class.Body        arenaBody     = arena.getBody(cx);
-        Type.Class.Method.Body arenaInitBody = getSoleConstructor(c);
-        Type.Class.Method      arenaInit     = arenaInitBody.getMethod();
+        Type.Class             arena           = getArenaForGladiator(c);
+        Type.Class.Body        arenaBody       = arena.getBody(cx);
+        MethodGen              arenaInitBody   = (MethodGen)getSoleConstructor(c);
+        Type.Class.Method      arenaInit       = arenaInitBody.getMethod();
+        Type.Class.Field       outerClassField = c.field("this$0", arena);
 
         Type.Class.Field            maxField = arena.field(getGladiatorName(c) + "$$max", Type.INT);
         /*arenaBody.addField(maxField, PRIVATE);*/
-        /*
-        assign(arenaInitBody, newIFR(arenaInitBody, maxField.makeRef()), IntConstant.v(initialSize),
-               arenaInitBody.getFirstNonIdentityStmt());
-        */
+        arenaInitBody.insertBlank(0);
+        arenaInitBody.insertBlank(0);
+        arenaInitBody.insertBlank(0);
+        arenaInitBody.set(0, ALOAD_1);
+        arenaInitBody.set(1, LDC, initialSize);
+        arenaInitBody.set(2, PUTFIELD, maxField);
 
         Type.Class.Field sizeField = arena.field(getGladiatorName(c) + "$$size", Type.INT);
         /*arenaBody.addField(sizeField, PRIVATE);*/
-        /*
-        assign(arenaInitBody, newIFR(arenaInitBody, sfr.makeRef()), IntConstant.v(0),
-               arenaInitBody.getFirstNonIdentityStmt());
-        */
-        /*
+        arenaInitBody.insertBlank(0);
+        arenaInitBody.insertBlank(0);
+        arenaInitBody.insertBlank(0);
+        arenaInitBody.set(0, ALOAD_1);
+        arenaInitBody.set(1, LDC, 0);
+        arenaInitBody.set(2, PUTFIELD, sizeField);
+
         Type.Class.Method      incMethod = c.method(getGladiatorName(c) + "$$inc()I");
-        Type.Class.Method.Body incBody   = incMethod.getBody(cx);
-
-
-        // Now build the $$inc method
-
-        Local l  =  newLocal(incBody, IntType.v());
-        Local l2 =  newLocal(incBody, IntType.v());
-        Local l3 =  newLocal(incBody, IntType.v());
-        Local l4 =  newLocal(incBody, IntType.v());
-       
-        assign(incBody, l,                                 newIFR(incBody, sfr.makeRef()));
-        assign(incBody, l2,                                Jimple.v().newAddExpr(l, IntConstant.v(1)));
-        assign(incBody, newIFR(incBody, sfr.makeRef()),       l2);
-        assign(incBody, l3,                                newIFR(incBody, maxField.makeRef()));
-
-        Stmt returnStmt = Jimple.v().newReturnStmt(l2);
-        incBody.getUnits().add(Jimple.v().newIfStmt(Jimple.v().newLtExpr(l2, l3), returnStmt));
-
-        assign(incBody,  l4,                               Jimple.v().newShlExpr(l3, IntConstant.v(1)));
-        assign(incBody,  newIFR(incBody, maxField.makeRef()), l4);
-
+        MethodGen              incBody   = cx.resolve(c.getName()).addMethod(incMethod, PUBLIC);
+        incBody.add(ALOAD_0);
+        incBody.add(GETFIELD, outerClassField);
+        incBody.add(DUP);
+        incBody.add(GETFIELD, sizeField);
+        incBody.add(DUP);
+        incBody.add(ISTORE_1);
+        incBody.add(LDC, 1);
+        incBody.add(IADD);
+        incBody.add(PUTFIELD, sizeField);
+        // FIXME: check for overflow / maxField
 
         // Finally, iterate over the Gladiator's fields, updating the $$inc method and Arena's zero-arg constructor as we go
 
-        for(Iterator it = sc.getFields().iterator(); it.hasNext();) {
-            Type.Class.Field f = (Type.Class.Field)it.next();
-            Type t      = getSliceElementType(f.getType());
-            f = arena.field(getGladiatorName(sc) + "$$" + f.getName(), t.makeArray());
-            arena.addField(f);
-
-            Expr newArr = Jimple.v().newNewArrayExpr(t, IntConstant.v(initialSize));
-            Local newArrLocal = newLocal(arenaInitBody, f.getType());
-            arenaInitBody.getUnits().addFirst(Jimple.v().newAssignStmt(newIFR(arenaInitBody, f.makeRef()), newArrLocal));
-            arenaInitBody.getUnits().addFirst(Jimple.v().newAssignStmt(newArrLocal, newArr));
-
-            Local ll0 = newLocal(incBody, f.getType());
-            Local ll = newLocal(incBody, f.getType());
-            assign(incBody, ll0, newIFR(incBody,  f.makeRef()));
-            assign(incBody, ll,  Jimple.v().newNewArrayExpr(t, l4));
-
-            List args = new LinkedList();
-            args.add(ll0);
-            args.add(IntConstant.v(0));
-            args.add(ll);
-            args.add(IntConstant.v(0));
-            args.add(l3);
-            incBody.getUnits().add(Jimple.v().newInvokeStmt(Jimple.v().newStaticInvokeExpr(System_arraycopy, args)));
-            assign(incBody, newIFR(incBody,  f.makeRef()), ll);
+        ClassFile cb = cx.resolve(c);
+        Type.Class.Field.Body[] fields = cb.fields();
+        for(int i=0; i<fields.length; i++) {
+            Type.Class.Field f = fields[i].getField();
+            if (f.getName().startsWith("this$")) continue;
+            Type t = getSliceElementType(f.getType());
+            f = arena.field(getGladiatorName(c) + "$$" + f.getName(), t.makeArray());
+            arenaBody.addField(f, PUBLIC);
+            
+            arenaInitBody.insertBlank(0);
+            arenaInitBody.insertBlank(0);
+            arenaInitBody.insertBlank(0);
+            arenaInitBody.insertBlank(0);
+            arenaInitBody.set(0, ALOAD_1);
+            arenaInitBody.set(1, LDC, initialSize);
+            arenaInitBody.set(2, (t instanceof Type.Ref) ? ANEWARRAY : NEWARRAY, t);
+            arenaInitBody.set(3, PUTFIELD, f);
         }
 
+        /*
         for(Iterator it = c.getBody(cx).getMethods().iterator(); it.hasNext();) {
             Type.Class.Method m = (Type.Class.Method)it.next();
             if (!m.isConcrete()) continue;
@@ -220,6 +209,8 @@ public class Arena implements CGConst {
         }
         incBody.getUnits().add(returnStmt);
         */
+        incBody.add(ILOAD_1);
+        incBody.add(IRETURN);
     }
 
     // Operations performed on all classes ////////////////////////////////////////////////////////////////////////////
@@ -487,10 +478,12 @@ public class Arena implements CGConst {
         }
         for(Iterator it = cx.enumerateClassFiles().iterator(); it.hasNext();) {
             ClassFile cf = (ClassFile)it.next();
+            System.out.println("processing " + cf.getType());
             processClassFile(cf);
         }
         for(Iterator it = cx.enumerateClassFiles().iterator(); it.hasNext();) {
             ClassFile cf = (ClassFile)it.next();
+            System.out.println("dumping " + cf.getType());
             out.putNextEntry(new ZipEntry(cf.getType().getName().replace('.', '/') + ".class"));
             cf.dump(out);
         }

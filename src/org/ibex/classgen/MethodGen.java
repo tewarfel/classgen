@@ -24,6 +24,36 @@ public class MethodGen extends Type.Class.Method.Body {
     private Object[] arg;
     private ConstantPool.Ent[] cparg;
 
+    public void insertBlank(int idx) {
+        for(int i=0;i<size();i++) {
+            switch(op[i]) {
+                case TABLESWITCH:
+                case LOOKUPSWITCH: {
+                    Switch si = (Switch) arg[i];
+                    int pos = si.getDefaultTarget();
+                    if (pos >= idx) si.setDefaultTarget(pos+1);
+                    for(int j=0;j<si.size();j++) {
+                        pos = si.getTarget(j);
+                        if (pos >= idx) si.setTarget(j, pos+1);
+                    }
+                    break;
+                }
+                default:
+                    if (OP_BRANCH(op[i])) {
+                        int pos = ((Integer)arg[i]).intValue();
+                        if (pos >= idx) arg[i] = N(pos+1);
+                    }
+                    break;
+            }
+        }
+        size++;
+        for(int i=size; i>idx; i--) {
+            op[i] = op[i-1];
+            arg[i] = arg[i-1];
+            cparg = null;
+        }
+    }
+
    
     // Constructors //////////////////////////////////////////////////////////////////////////////
 

@@ -106,6 +106,7 @@ public abstract class Type implements CGConst {
         public abstract String toString();
         public    Type.Ref asRef() { return this; }
         public    boolean  isRef() { return true; }
+        abstract String internalForm();
     }
 
     public static class Array extends Type.Ref {
@@ -115,6 +116,7 @@ public abstract class Type implements CGConst {
         public boolean isArray() { return true; }
         public String toString() { return base.toString() + "[]"; }
         public Type getElementType() { return base; }
+        String internalForm() { return getDescriptor(); }
     }
 
     public static class Class extends Type.Ref {

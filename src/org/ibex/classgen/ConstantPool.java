@@ -219,7 +219,7 @@ class ConstantPool implements CGConst {
             return ent;
         }
         
-        if (o instanceof Type.Class) { ent = new ClassEnt(((Type.Class)o).internalForm()); }
+        if (o instanceof Type.Ref) { ent = new ClassEnt(((Type.Ref)o).internalForm()); }
         else if (o instanceof String) { ent = new StringLitEnt((String)o); }
         else if (o instanceof Integer) { ent = new IntLitEnt(((Integer)o).intValue()); }
         else if (o instanceof Float) { ent = new FloatLitEnt(((Float)o).floatValue()); }
@@ -240,7 +240,7 @@ class ConstantPool implements CGConst {
             ent = new MemberEnt(tag, m.getDeclaringClass(), m.name, m.getTypeDescriptor());
         } 
         else {
-            throw new IllegalArgumentException("Unknown type passed to add");
+            throw new IllegalArgumentException("Unknown type " + o + " passed to add");
         }
         
         int spaces = ent.slots();        

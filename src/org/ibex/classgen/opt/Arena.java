@@ -77,7 +77,7 @@ public class Arena implements CGConst {
         arenaInitBody.set(1, LDC, 0);
         arenaInitBody.set(2, PUTFIELD, sizeField);
 
-        Type.Class.Method      incMethod = c.method(getGladiatorName(c) + "$$inc()I");
+        Type.Class.Method      incMethod = null; //c.method(getGladiatorName(c) + "$$inc()I");
         MethodGen              incBody   = cx.resolve(c.getName()).addMethod(incMethod, PUBLIC);
         incBody.add(ALOAD_0);
         incBody.add(GETFIELD, outerClassField);
@@ -99,7 +99,7 @@ public class Arena implements CGConst {
             if (f.getName().startsWith("this$")) continue;
             Type t = getSliceElementType(f.getType());
             f = arena.field(getGladiatorName(c) + "$$" + f.getName(), t.makeArray());
-            arenaBody.addField(f, PUBLIC);
+            //arenaBody.addField(f, PUBLIC);
             
             arenaInitBody.insertBlank(0);
             arenaInitBody.insertBlank(0);

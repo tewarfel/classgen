@@ -100,11 +100,6 @@ public class ClassFile extends Type.Class.Body {
         methods.addElement(mg);
         return mg;
     }
-    public final MethodGen addMethod(Type.Class.Method m, int flags) {
-        MethodGen mg = new MethodGen(m, flags);
-        methods.addElement(mg);
-        return mg;
-    }
     
     /** Adds a new field to this class 
         @param name The name of the filed (not the signature, just the name)

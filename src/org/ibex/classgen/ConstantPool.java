@@ -6,7 +6,7 @@ import java.io.*;
 import org.ibex.classgen.util.*;
 
 class ConstantPool implements CGConst {
-    private final Hashtable entries = new Hashtable();
+    private final Hashtable<Object,Ent> entries = new Hashtable<Object,Ent>();
     private Ent[] entriesByIndex; // only valid when stable
     
     private int usedSlots = 1; // 0 is reserved

@@ -11,8 +11,8 @@ public class ClassFile extends Type.Class.Body {
     private final short minor;
     private final short major;
     
-    private final Vector fields = new Vector();
-    private final Vector methods = new Vector();
+    private final Vector<FieldGen> fields = new Vector<FieldGen>();
+    private final Vector<MethodGen> methods = new Vector<MethodGen>();
 
     public Type.Class.Method.Body[] methods() {
         Type.Class.Method.Body[] ret = new Type.Class.Method.Body[methods.size()];
@@ -256,7 +256,7 @@ public class ClassFile extends Type.Class.Body {
     }
     
     static class AttrGen {
-        private final Hashtable ht = new Hashtable();
+        private final Hashtable<String,Object> ht = new Hashtable<String,Object>();
         
         AttrGen() { }
         AttrGen(DataInput in, ConstantPool cp) throws IOException {

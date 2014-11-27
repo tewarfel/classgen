@@ -5,7 +5,7 @@ import java.util.Hashtable;
 
 public abstract class Type implements CGConst {
 
-    private static Hashtable instances = new Hashtable();  // this has to appear at the top of the file
+    private static Hashtable<String,Type> instances = new Hashtable<String,Type>();  // this has to appear at the top of the file
 
     // Public API //////////////////////////////////////////////////////////////////////////////
 

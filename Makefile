@@ -1,4 +1,4 @@
-JAVAC = javac -source 1.3 -target 1.3
+JAVAC = javac -source 1.8 -target 1.8 -Xlint:unchecked
 sources = $(shell find src -name '*.java')
 classes = $(sources:src/%.java=build/%.class)
 jar_classes = $(classes)

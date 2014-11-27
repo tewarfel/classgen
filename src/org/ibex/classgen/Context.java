@@ -9,7 +9,7 @@ import java.util.*;
  */
 public class Context {
 
-    private Hashtable cache = new Hashtable();
+private Hashtable<String,ClassFile> cache = new Hashtable<String,ClassFile>();
 
     public Context() { }
 
